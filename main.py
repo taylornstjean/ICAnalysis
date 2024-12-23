@@ -2,19 +2,15 @@
 #METAPROJECT icetray/v1.8.2
 #!/bin/env python3
 
-from analysis.core import H5File, H5FileGroup, I3File
+from analysis.core import H5File, H5FileGroup, I3File, I3FileGroup
 import analysis.config as config
 import os
 
 def main():
 
-    filegroup = H5FileGroup(config.DATADIR)
-    i3file = I3File(config.I3FILEPATH)
+    h5filegroup = H5FileGroup(config.DATADIR)
+    h5filegroup.plot_simweight("test.png")
 
-    print(i3file)
-    print(filegroup)
-    print(i3file.extract_metadata())
-    
 
 if __name__ == "__main__":
     main()

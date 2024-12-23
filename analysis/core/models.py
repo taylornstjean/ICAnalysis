@@ -1,12 +1,19 @@
 import h5py
 import os
+import sys
+import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import simweights
+from numpy.typing import ArrayLike
 
-from icecube import icetray, dataio, dataclasses
+from icecube import icetray, dataio, dataclasses, hdfwriter, simclasses
 from icecube.dataclasses import I3Particle
+from icecube.icetray import I3Tray
+from tables import NoSuchNodeError
 
 from analysis.utils import listdir_absolute
-from analysis.render import Histogram
+from analysis.render import EventDetailHist, SimweightHist
 
 
 class H5File:
@@ -47,7 +54,7 @@ class H5FileGroup:
 
     __slots__ = ["_directory", "_paths", "_filenames"]
 
-    def __init__(self, directory):
+    def __init__(self, directory: str):
         self._directory = directory
         self._paths = listdir_absolute(self._directory)
         self._filenames = [os.path.basename(path) for path in self._paths]
@@ -59,10 +66,10 @@ class H5FileGroup:
 
         return _repr
 
-    def plot(self, _type, path) -> None:
+    def plot(self, _type: str, path: str) -> None:
         """Generate quick plots."""
         if _type == "hist":
-            plot = Histogram()
+            plot = EventDetailHist()
             plot.populate(self.charge, self.zenith)
             plot.save(path)
 
@@ -74,7 +81,7 @@ class H5FileGroup:
     def zenith(self) -> np.ndarray:
         return self._get_parameter("zenith")
 
-    def _get_parameter(self, parameter) -> np.ndarray:
+    def _get_parameter(self, parameter: str) -> np.ndarray:
         print(f"\n--> Concatenating {parameter}...")
 
         array = np.array([])
@@ -90,6 +97,42 @@ class H5FileGroup:
         for path in self._paths:
             yield H5File(path)
 
+    @staticmethod
+    def _get_weight(hdfstore: pd.HDFStore, weight: list, primary_energy: list) -> bool:
+
+        def _northern_track(energy: ArrayLike) -> ArrayLike:
+            """
+            This function to represent the IceCube northern track limit.
+            Note that the units are GeV^-1 * cm^-2 * sr^-1 * s^-1 per particle type.
+            """
+            return 1.44e-18 / 2 * (energy / 1e5) ** -2.2
+
+        try:
+            weighter = simweights.NuGenWeighter(hdfstore, nfiles=1)
+        except NoSuchNodeError:
+            return False
+
+        weight.extend(weighter.get_weights(_northern_track))
+        primary_energy.extend(weighter.get_column("PolyplopiaPrimary", "energy"))
+
+        return True
+
+    def plot_simweight(self, path: str):
+        weight = []
+        primary_energy = []
+
+        for file in self._paths:
+            print(f"\rCurrent file: {file}", end="")
+            with pd.HDFStore(file, "r") as hdfstore:
+                self._get_weight(hdfstore, weight, primary_energy)
+
+        # convert to numpy arrays
+        weight = np.array(weight)
+        primary_energy = np.array(primary_energy)
+
+        hist = SimweightHist()
+        hist.populate(primary_energy, weight)
+        hist.save(path)
 
 class I3File:
 
@@ -97,7 +140,7 @@ class I3File:
 
     __slots__ = ["_path", "_file"]
 
-    def __init__(self, path):
+    def __init__(self, path: str):
         self._path = path
         self._file = dataio.I3File(self._path)
 
@@ -133,7 +176,7 @@ class I3File:
 
         return _metadata
 
-    def get_interacting_nu(self, neutrino, mc_tree) -> I3Particle | None:
+    def get_interacting_nu(self, neutrino: I3Particle, mc_tree) -> I3Particle | None:
         """Walk through the tree to find the first InIce neutrino."""
         while neutrino.location_type != dataclasses.I3Particle.LocationType.InIce:
             children = mc_tree.get_daughters(neutrino)
@@ -153,7 +196,7 @@ class I3File:
         return neutrino
 
     @staticmethod
-    def get_vertex(neutrino):
+    def get_vertex(neutrino: I3Particle) -> float:
         """Get the vertex position of a neutrino."""
         stop_pos = neutrino.pos + neutrino.dir * neutrino.length
         return stop_pos
@@ -169,4 +212,30 @@ class I3File:
             _is_neutrino = True
 
         return _is_neutrino
+
+
+class I3FileGroup:
+
+    def __init__(self, directory: str):
+        self._directory = directory
+        self._paths = listdir_absolute(self._directory)
+        self._filenames = [os.path.basename(path) for path in self._paths]
+
+    def __repr__(self) -> str:
+        _repr = "\n<-- I3FileGroup Object -->\n"
+        _repr += f"\nDirectory:\t\t\t\t\t\t{self._directory}"
+        _repr += f"\nNumber of files in Group:\t\t{len(self._paths)}"
+
+        return _repr
+
+    def to_hdf5(self, path: str) -> None:
+        tray = I3Tray()
+        tray.Add("I3Reader", FileNameList=self._paths)
+        tray.Add(
+            hdfwriter.I3HDFWriter,
+            SubEventStreams=["InIceSplit"],
+            keys=["PolyplopiaPrimary", "I3MCWeightDict"],
+            output=path
+        )
+        tray.Execute()
 

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-class Histogram:
+class EventDetailHist:
 
     def __init__(self):
         self._fig = plt.figure(figsize=(10, 5))
@@ -24,3 +24,27 @@ class Histogram:
     def save(self, path):
         plt.tight_layout()
         self._fig.savefig(path, dpi=300)
+
+
+class SimweightHist:
+
+    def __init__(self):
+        self._fig: plt.Figure = plt.figure(figsize=(10, 5))
+        self._ax: plt.Axes = self._fig.add_subplot(111)
+
+        self._bins = np.geomspace(1e2, 1e8, 50)
+
+        self._ax.loglog()
+
+        self._ax.set_xlabel("Primary Energy [GeV]")
+        self._ax.set_ylabel("Event Rate [Hz]")
+
+        self._ax.set_xlim(self._bins[0], self._bins[-1])
+        self._ax.set_ylim(1e-8, 2e-6)
+
+    def populate(self, primary_energy: np.ndarray, weight: np.ndarray):
+        self._ax.hist(primary_energy, weights=weight, bins=self._bins, histtype="step", color="blue")
+
+    def save(self, path):
+        plt.tight_layout()
+        self._fig.savefig(path, dpi=300, format="png")

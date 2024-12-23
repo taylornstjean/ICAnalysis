@@ -1,1 +1,1 @@
-from .render import Histogram
+from .render import EventDetailHist, SimweightHist
