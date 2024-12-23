@@ -47,6 +47,32 @@ class H5File:
             zenith = np.array([])
         return zenith
 
+    @staticmethod
+    def _get_weight(hdfstore: pd.HDFStore) -> tuple:
+
+        def _northern_track(energy: ArrayLike) -> ArrayLike:
+            """
+            This function to represent the IceCube northern track limit.
+            Note that the units are GeV^-1 * cm^-2 * sr^-1 * s^-1 per particle type.
+            """
+            return 1.44e-18 / 2 * (energy / 1e5) ** -2.2
+
+        weighter = simweights.NuGenWeighter(hdfstore, nfiles=100)
+
+        weight = weighter.get_weights(_northern_track)
+        primary_energy = weighter.get_column("PolyplopiaPrimary", "energy")
+
+        return weight, primary_energy
+
+    def plot_simweight(self, path: str):
+
+        with pd.HDFStore(self._path, "r") as hdfstore:
+            weight, primary_energy = self._get_weight(hdfstore)
+
+        hist = SimweightHist()
+        hist.populate(primary_energy, weight)
+        hist.save(path)
+
 
 class H5FileGroup:
 
@@ -97,42 +123,6 @@ class H5FileGroup:
         for path in self._paths:
             yield H5File(path)
 
-    @staticmethod
-    def _get_weight(hdfstore: pd.HDFStore, weight: list, primary_energy: list) -> bool:
-
-        def _northern_track(energy: ArrayLike) -> ArrayLike:
-            """
-            This function to represent the IceCube northern track limit.
-            Note that the units are GeV^-1 * cm^-2 * sr^-1 * s^-1 per particle type.
-            """
-            return 1.44e-18 / 2 * (energy / 1e5) ** -2.2
-
-        try:
-            weighter = simweights.NuGenWeighter(hdfstore, nfiles=1)
-        except NoSuchNodeError:
-            return False
-
-        weight.extend(weighter.get_weights(_northern_track))
-        primary_energy.extend(weighter.get_column("PolyplopiaPrimary", "energy"))
-
-        return True
-
-    def plot_simweight(self, path: str):
-        weight = []
-        primary_energy = []
-
-        for file in self._paths:
-            print(f"\rCurrent file: {file}", end="")
-            with pd.HDFStore(file, "r") as hdfstore:
-                self._get_weight(hdfstore, weight, primary_energy)
-
-        # convert to numpy arrays
-        weight = np.array(weight)
-        primary_energy = np.array(primary_energy)
-
-        hist = SimweightHist()
-        hist.populate(primary_energy, weight)
-        hist.save(path)
 
 class I3File:
 

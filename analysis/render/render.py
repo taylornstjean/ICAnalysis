@@ -40,7 +40,7 @@ class SimweightHist:
         self._ax.set_ylabel("Event Rate [Hz]")
 
         self._ax.set_xlim(self._bins[0], self._bins[-1])
-        self._ax.set_ylim(1e-8, 2e-6)
+        self._ax.set_ylim(1e-8, 2e-5)
 
     def populate(self, primary_energy: np.ndarray, weight: np.ndarray):
         self._ax.hist(primary_energy, weights=weight, bins=self._bins, histtype="step", color="blue")

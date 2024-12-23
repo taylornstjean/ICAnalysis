@@ -8,8 +8,9 @@ import os
 
 def main():
 
-    h5filegroup = H5FileGroup(config.DATADIR)
-    h5filegroup.plot_simweight("test.png")
+
+    h5file = H5File(config.TESTHDF5)
+    h5file.plot_simweight("test.png")
 
 
 if __name__ == "__main__":
