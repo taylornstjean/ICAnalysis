@@ -9,8 +9,9 @@ import os
 def main():
 
 
-    h5file = H5File(config.TESTHDF5)
-    h5file.plot_simweight("test.png")
+    # h5file = H5File(config.TESTHDF5)
+    i3filegroup = I3FileGroup(config.I3FILEDIR)
+    i3filegroup.plot_vertices()
 
 
 if __name__ == "__main__":

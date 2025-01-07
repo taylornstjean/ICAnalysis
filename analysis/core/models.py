@@ -1,6 +1,7 @@
 import h5py
 import os
 import sys
+import pickle
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -68,6 +69,8 @@ class H5File:
 
         with pd.HDFStore(self._path, "r") as hdfstore:
             weight, primary_energy = self._get_weight(hdfstore)
+
+        print(weight)
 
         hist = SimweightHist()
         hist.populate(primary_energy, weight)
@@ -210,6 +213,7 @@ class I3FileGroup:
         self._directory = directory
         self._paths = listdir_absolute(self._directory)
         self._filenames = [os.path.basename(path) for path in self._paths]
+        self._objects = [I3File(path) for path in self._paths]
 
     def __repr__(self) -> str:
         _repr = "\n<-- I3FileGroup Object -->\n"
@@ -228,4 +232,28 @@ class I3FileGroup:
             output=path
         )
         tray.Execute()
+
+    def plot_vertices(self):
+
+        metadata = {}
+        print("Gathering Metadata...")
+        for i, _obj in enumerate(self._objects):
+            print(f"\rWorking on file number {i}", end="")
+            metadata[i] = _obj.extract_metadata()
+
+        vertices = []
+        print("\n\nParsing...")
+        for i, entry in metadata.items():
+            print(f"\rWorking on file number {i}", end="")
+            for packet in entry:
+                vertices.append(packet["vertex"])
+
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+
+        for vertex in vertices:
+            ax.scatter(*vertex)
+
+        with open("vertices_test.fig.pkl", "wb") as file:
+            pickle.dump(fig, file)
 
