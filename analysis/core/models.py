@@ -1,7 +1,6 @@
 import h5py
 import os
 import sys
-import pickle
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -254,6 +253,5 @@ class I3FileGroup:
         for vertex in vertices:
             ax.scatter(*vertex)
 
-        with open("vertices_test.fig.pkl", "wb") as file:
-            pickle.dump(fig, file)
+        plt.savefig("vertices_test.png")
 
