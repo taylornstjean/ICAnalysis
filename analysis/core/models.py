@@ -1,6 +1,6 @@
 import h5py
 import os
-import sys
+import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -242,16 +242,21 @@ class I3FileGroup:
 
         vertices = []
         print("\n\nParsing...")
-        for i, entry in metadata.items():
-            print(f"\rWorking on file number {i}", end="")
+        for j, entry in metadata.items():
+            print(f"\rWorking on file number {j}", end="")
             for packet in entry:
-                vertices.append(packet["vertex"])
+                vertex = packet["vertex"]
+                vertices.append([float(vertex.x), float(vertex.y), float(vertex.z)])
 
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
         for vertex in vertices:
             ax.scatter(*vertex)
+
+        json_str = json.dumps(vertices)
+        with open("vertex_data.json", "w+") as file:
+            json.dump(json_str, file, indent=4)
 
         plt.savefig("vertices_test.png")
 
