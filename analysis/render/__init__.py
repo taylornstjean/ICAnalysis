@@ -1,1 +1,1 @@
-from .render import EventDetailHist, SimweightHist
+from .render import EventDetailHist, SimweightHist, PointCloud3D

@@ -3,17 +3,16 @@ import os
 import json
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import simweights
 from numpy.typing import ArrayLike
+import tqdm
 
-from icecube import icetray, dataio, dataclasses, hdfwriter, simclasses
+from icecube import icetray, dataio, dataclasses, hdfwriter
 from icecube.dataclasses import I3Particle
 from icecube.icetray import I3Tray
-from tables import NoSuchNodeError
 
 from analysis.utils import listdir_absolute
-from analysis.render import EventDetailHist, SimweightHist
+from analysis.render import EventDetailHist, SimweightHist, PointCloud3D
 
 
 class H5File:
@@ -68,8 +67,6 @@ class H5File:
 
         with pd.HDFStore(self._path, "r") as hdfstore:
             weight, primary_energy = self._get_weight(hdfstore)
-
-        print(weight)
 
         hist = SimweightHist()
         hist.populate(primary_energy, weight)
@@ -232,31 +229,30 @@ class I3FileGroup:
         )
         tray.Execute()
 
-    def plot_vertices(self):
+    def plot_vertices(self, projection: bool=False, histogram: bool=False, d: int=1) -> None:
 
         metadata = {}
         print("Gathering Metadata...")
-        for i, _obj in enumerate(self._objects):
-            print(f"\rWorking on file number {i}", end="")
+        for i, _obj in tqdm.tqdm(enumerate(self._objects), total=len(self._paths)):
             metadata[i] = _obj.extract_metadata()
 
         vertices = []
         print("\n\nParsing...")
-        for j, entry in metadata.items():
-            print(f"\rWorking on file number {j}", end="")
+        for j, entry in tqdm.tqdm(metadata.items()):
             for packet in entry:
                 vertex = packet["vertex"]
                 vertices.append([float(vertex.x), float(vertex.y), float(vertex.z)])
 
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
+        fig = PointCloud3D(vertices)
 
-        for vertex in vertices:
-            ax.scatter(*vertex)
-
-        json_str = json.dumps(vertices)
-        with open("vertex_data.json", "w+") as file:
-            json.dump(json_str, file, indent=4)
-
-        plt.savefig("vertices_test.png")
+        if not projection:
+            fig.plot_3d("vertices.html")
+        else:
+            if not histogram:
+                fig.plot_2d_projections("vertices_projected.html")
+            else:
+                if d == 1:
+                    fig.plot_1d_histograms("vertices_projected_hist.html")
+                elif d == 2:
+                    fig.plot_2d_histograms("vertices_projected_hist_2d.html")
 

@@ -2,16 +2,21 @@
 #METAPROJECT icetray/v1.8.2
 #!/bin/env python3
 
-from analysis.core import H5File, H5FileGroup, I3File, I3FileGroup
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    category=RuntimeWarning,
+    message=r".*to-Python converter for.*already registered.*"
+)
+
+from analysis.core import I3FileGroup
 import analysis.config as config
-import os
+
 
 def main():
 
-
-    # h5file = H5File(config.TESTHDF5)
     i3filegroup = I3FileGroup(config.I3FILEDIR)
-    i3filegroup.plot_vertices()
+    i3filegroup.plot_vertices(projection=True, histogram=True, d=2)
 
 
 if __name__ == "__main__":
