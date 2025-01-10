@@ -9,14 +9,14 @@ warnings.filterwarnings(
     message=r".*to-Python converter for.*already registered.*"
 )
 
-from analysis.core import I3FileGroup
+from analysis.core import I3FileGroup, I3File
 import analysis.config as config
 
 
 def main():
 
-    i3filegroup = I3FileGroup(config.I3FILEDIR)
-    i3filegroup.plot_vertices(projection=True, histogram=True, d=2)
+    i3filegroup = I3FileGroup(config.I3FILEDIRMAIN)
+    i3filegroup.plot_vertices(interact_type=[1, 2], projection=True, histogram=True, d=2)
 
 
 if __name__ == "__main__":
