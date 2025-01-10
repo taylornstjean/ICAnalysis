@@ -147,6 +147,8 @@ class I3File:
             # Check if the frame is a Physics frame
             if frame.Stop == icetray.I3Frame.Physics:
                 mc_tree = frame["I3MCTree_preMuonProp"]
+                i3mc_wd = frame["I3MCWeightDict"]
+
                 primary_neutrino = dataclasses.get_most_energetic_primary(mc_tree)
 
                 if primary_neutrino is None or not self.is_neutrino(primary_neutrino):
@@ -156,11 +158,14 @@ class I3File:
                 interacting_neutrino = self.get_interacting_nu(primary_neutrino, mc_tree)
                 vertex = self.get_vertex(interacting_neutrino)
 
+                interaction_type = i3mc_wd["InteractionType"]
+
                 _metadata += [{
                     "frame": frame,
                     "primary_nu": primary_neutrino,
                     "interacting_nu": interacting_neutrino,
-                    "vertex": vertex
+                    "vertex": vertex,
+                    "interact_type": interaction_type
                 }]
 
         return _metadata
@@ -229,19 +234,25 @@ class I3FileGroup:
         )
         tray.Execute()
 
-    def plot_vertices(self, projection: bool=False, histogram: bool=False, d: int=1) -> None:
+    def plot_vertices(self, interact_type: list, projection: bool=False, histogram: bool=False, d: int=1) -> None:
 
         metadata = {}
         print("Gathering Metadata...")
         for i, _obj in tqdm.tqdm(enumerate(self._objects), total=len(self._paths)):
-            metadata[i] = _obj.extract_metadata()
+            if i % 20 != 0:
+                continue
+            try:
+                metadata[i] = _obj.extract_metadata()
+            except Exception as e:
+                print(e)
 
         vertices = []
         print("\n\nParsing...")
         for j, entry in tqdm.tqdm(metadata.items()):
             for packet in entry:
-                vertex = packet["vertex"]
-                vertices.append([float(vertex.x), float(vertex.y), float(vertex.z)])
+                if any([int(packet["interact_type"]) == n for n in interact_type]):
+                    vertex = packet["vertex"]
+                    vertices.append([float(vertex.x), float(vertex.y), float(vertex.z)])
 
         fig = PointCloud3D(vertices)
 
@@ -252,7 +263,7 @@ class I3FileGroup:
                 fig.plot_2d_projections("vertices_projected.html")
             else:
                 if d == 1:
-                    fig.plot_1d_histograms("vertices_projected_hist.html")
+                    fig.plot_1d_histograms("vertices_projected_hist_1d.html")
                 elif d == 2:
                     fig.plot_2d_histograms("vertices_projected_hist_2d.html")
 

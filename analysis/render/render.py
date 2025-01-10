@@ -60,6 +60,9 @@ class PointCloud3D:
         self._z = [point[2] for point in points]
         self._r = [np.sqrt(x ** 2 + y ** 2) for x, y in zip(self._x, self._y)]
 
+        self._xy_color = [x * y for x, y in zip(self._x, self._y)]
+        self._rz_color = [r * z for r, z in zip(self._r, self._z)]
+
     def plot_3d(self, path: str):
         _fig = go.Figure(data=[
             go.Scatter3d(x=self._x, y=self._y, z=self._z, mode="markers", marker={"size": 3})
@@ -128,7 +131,8 @@ class PointCloud3D:
         _fig.write_html(path, include_plotlyjs="cdn")
 
     def plot_2d_histograms(self, path: str):
-        _fig = make_subplots(rows=1, cols=2, subplot_titles=("X vs Y", "R vs Z"))
+
+        _fig = make_subplots(rows=1, cols=2, subplot_titles=("X vs Y", "R vs Z"), horizontal_spacing=0.2)
 
         _fig.update_xaxes(title_text="X", row=1, col=1)
         _fig.update_xaxes(title_text="R", row=1, col=2)
@@ -136,41 +140,63 @@ class PointCloud3D:
         _fig.update_yaxes(title_text="Y", row=1, col=1)
         _fig.update_yaxes(title_text="Z", row=1, col=2)
 
-        colorscale = [
-            [0.0, "#DEDEDE"],
-            [0.001, "black"],
-            [1.0, "dodgerblue"]
-        ]
+        colorscale = "Blackbody"  # Perceptually uniform colorscale
 
-        _fig.add_trace(
-            go.Histogram2d(x=self._x, y=self._y, nbinsx=500, nbinsy=500, colorscale=colorscale, coloraxis="coloraxis1", zmin=1),
-            row=1, col=1
+        # Compute histogram data for X vs Y
+        hist_xy, x_edges_xy, y_edges_xy = np.histogram2d(
+            self._x, self._y, bins=500
         )
-        _fig.add_trace(
-            go.Histogram2d(x=self._r, y=self._z, nbinsx=500, nbinsy=500, colorscale=colorscale, coloraxis="coloraxis2", zmin=1),
-            row=1, col=2
-        )
+        hist_xy_log = np.log10(hist_xy + 1)  # Apply logarithmic scaling
 
-        _fig.update_layout(
-            coloraxis1=dict(
+        # Compute histogram data for R vs Z
+        hist_rz, x_edges_rz, y_edges_rz = np.histogram2d(
+            self._r, self._z, bins=500
+        )
+        hist_rz_log = np.log10(hist_rz + 1)  # Apply logarithmic scaling
+
+        tickvals = [0, 0.301, 0.699, 1, 1.301, 1.699, 2, 3]  # Log10 scale: 10^0 to 10^4
+        ticktext = ["1", "2", "5", "10", "20", "50", "100", "1000"]
+
+        # Add 2D histogram for X vs Y
+        _fig.add_trace(
+            go.Heatmap(
+                x=x_edges_xy[:-1],
+                y=y_edges_xy[:-1],
+                z=hist_xy_log.T,
                 colorscale=colorscale,
                 colorbar=dict(
-                    x=0.45
-                )
+                    x=0.4
+                ),
             ),
-            coloraxis2=dict(
+            row=1,
+            col=1,
+        )
+
+        # Add 2D histogram for R vs Z
+        _fig.add_trace(
+            go.Heatmap(
+                x=x_edges_rz[:-1],
+                y=y_edges_rz[:-1],
+                z=hist_rz_log.T,
                 colorscale=colorscale,
                 colorbar=dict(
                     x=1.0
-                )
-            )
+                ),
+            ),
+            row=1,
+            col=2,
         )
 
+        # Adjust axis ranges (optional, based on dataset)
         _fig.update_xaxes(range=[-9000, 9000], row=1, col=1)
         _fig.update_yaxes(range=[-9000, 9000], row=1, col=1)
 
         _fig.update_xaxes(range=[0, 15000], row=1, col=2)
         _fig.update_yaxes(range=[-6000, 1950], row=1, col=2)
 
+        # Set figure dimensions
+        _fig.update_layout(height=700, width=1400)
+
+        # Write to an HTML file
         _fig.write_html(path, include_plotlyjs="cdn")
 
