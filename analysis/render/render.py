@@ -54,10 +54,13 @@ class SimweightHist:
 
 class PointCloud3D:
 
-    def __init__(self, points: list[list]):
-        self._x = [point[0] for point in points]
-        self._y = [point[1] for point in points]
-        self._z = [point[2] for point in points]
+    def __init__(self, data: list[list]):
+        self._points = [d[0] for d in data]
+        self._weights = [d[1] for d in data]
+
+        self._x = [point[0] for point in self._points]
+        self._y = [point[1] for point in self._points]
+        self._z = [point[2] for point in self._points]
         self._r = [np.sqrt(x ** 2 + y ** 2) for x, y in zip(self._x, self._y)]
 
         self._xy_color = [x * y for x, y in zip(self._x, self._y)]
@@ -144,18 +147,15 @@ class PointCloud3D:
 
         # Compute histogram data for X vs Y
         hist_xy, x_edges_xy, y_edges_xy = np.histogram2d(
-            self._x, self._y, bins=500
+            self._x, self._y, weights=self._weights, bins=500
         )
         hist_xy_log = np.log10(hist_xy + 1)  # Apply logarithmic scaling
 
         # Compute histogram data for R vs Z
         hist_rz, x_edges_rz, y_edges_rz = np.histogram2d(
-            self._r, self._z, bins=500
+            self._r, self._z, weights=self._weights, bins=500
         )
         hist_rz_log = np.log10(hist_rz + 1)  # Apply logarithmic scaling
-
-        tickvals = [0, 0.301, 0.699, 1, 1.301, 1.699, 2, 3]  # Log10 scale: 10^0 to 10^4
-        ticktext = ["1", "2", "5", "10", "20", "50", "100", "1000"]
 
         # Add 2D histogram for X vs Y
         _fig.add_trace(
@@ -165,6 +165,7 @@ class PointCloud3D:
                 z=hist_xy_log.T,
                 colorscale=colorscale,
                 colorbar=dict(
+                    exponentformat="power",
                     x=0.4
                 ),
             ),
@@ -180,6 +181,7 @@ class PointCloud3D:
                 z=hist_rz_log.T,
                 colorscale=colorscale,
                 colorbar=dict(
+                    exponentformat="power",
                     x=1.0
                 ),
             ),

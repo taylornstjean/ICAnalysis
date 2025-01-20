@@ -47,7 +47,7 @@ class H5File:
         return zenith
 
     @staticmethod
-    def _get_weight(hdfstore: pd.HDFStore) -> tuple:
+    def _get_weight(hdfstore: pd.HDFStore, nfiles) -> tuple:
 
         def _northern_track(energy: ArrayLike) -> ArrayLike:
             """
@@ -56,17 +56,23 @@ class H5File:
             """
             return 1.44e-18 / 2 * (energy / 1e5) ** -2.2
 
-        weighter = simweights.NuGenWeighter(hdfstore, nfiles=100)
+        weighter = simweights.NuGenWeighter(hdfstore, nfiles=nfiles)
 
         weight = weighter.get_weights(_northern_track)
         primary_energy = weighter.get_column("PolyplopiaPrimary", "energy")
 
         return weight, primary_energy
 
+    def weights(self, nfiles):
+        with pd.HDFStore(self._path, "r") as hdfstore:
+            weight, primary_energy = self._get_weight(hdfstore, nfiles)
+
+        return weight
+
     def plot_simweight(self, path: str):
 
         with pd.HDFStore(self._path, "r") as hdfstore:
-            weight, primary_energy = self._get_weight(hdfstore)
+            weight, primary_energy = self._get_weight(hdfstore, 100)
 
         hist = SimweightHist()
         hist.populate(primary_energy, weight)
@@ -137,6 +143,10 @@ class I3File:
         _repr = "\n<-- I3File Object -->\n"
         _repr = f"\nFile:\t\t\t\t\t\t{os.path.basename(self._path)}\n"
         return _repr
+
+    def test(self):
+        while self._file.more():
+            pass
 
     def extract_metadata(self) -> list:
         _metadata = []
@@ -223,6 +233,10 @@ class I3FileGroup:
 
         return _repr
 
+    def __iter__(self):
+        for obj in self._objects:
+            yield obj
+
     def to_hdf5(self, path: str) -> None:
         tray = I3Tray()
         tray.Add("I3Reader", FileNameList=self._paths)
@@ -267,3 +281,32 @@ class I3FileGroup:
                 elif d == 2:
                     fig.plot_2d_histograms("vertices_projected_hist_2d.html")
 
+
+class I3Plotter:
+
+    def __init__(self, directory: str):
+        self._dir = directory
+        self._paths = [f"jobs/output/json/{file}" for file in os.listdir(directory)]
+
+    def plot(self, interact_type: list, weights):
+        metadata = self.metadata()
+        data = []
+
+        counter = 0
+
+        print("\n\nParsing...")
+        for j, entry in tqdm.tqdm(metadata.items()):
+            for packet in entry:
+                if any([int(packet["interact_type"]) == n for n in interact_type]):
+                    data.append([packet["vertex"], weights[counter]])
+                    counter += 1
+
+        fig = PointCloud3D(data)
+        fig.plot_2d_histograms("vertices.html")
+
+    def metadata(self) -> dict:
+        _metadata = {}
+        for i, file in tqdm.tqdm(enumerate(self._paths)):
+            with open(file, 'r') as f:
+                _metadata[i] = json.load(f)
+        return _metadata
