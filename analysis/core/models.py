@@ -148,6 +148,21 @@ class I3File:
         while self._file.more():
             pass
 
+    def get_HESE_count(self, x_bounds, y_bounds, z_bounds):
+        count = 0
+
+        for entry in self.extract_metadata():
+            vertex = entry["vertex"]
+            if all([
+                (x_bounds[0] <= vertex[0] <= x_bounds[1]),
+                (y_bounds[0] <= vertex[1] <= y_bounds[1]),
+                (z_bounds[0] <= vertex[2] <= z_bounds[1])
+            ]):
+                if "HESE" in entry["alerts"]:
+                    count += 1
+
+        return count
+
     def extract_metadata(self) -> list:
         _metadata = []
 
@@ -158,6 +173,7 @@ class I3File:
             if frame.Stop == icetray.I3Frame.Physics:
                 mc_tree = frame["I3MCTree_preMuonProp"]
                 i3mc_wd = frame["I3MCWeightDict"]
+                alerts = frame["AlertNamesPassed"]
 
                 primary_neutrino = dataclasses.get_most_energetic_primary(mc_tree)
 
@@ -175,7 +191,8 @@ class I3File:
                     "primary_nu": primary_neutrino,
                     "interacting_nu": interacting_neutrino,
                     "vertex": vertex,
-                    "interact_type": interaction_type
+                    "interact_type": interaction_type,
+                    "alerts": alerts
                 }]
 
         return _metadata
@@ -236,6 +253,15 @@ class I3FileGroup:
     def __iter__(self):
         for obj in self._objects:
             yield obj
+
+    def get_total_HESE_count(self, x_bounds, y_bounds, z_bounds):
+        count = 0
+
+        _iter = tqdm.tqdm(self._objects)
+        for obj in _iter:
+            count += obj.get_HESE_count(x_bounds, y_bounds, z_bounds)
+
+        return count
 
     def to_hdf5(self, path: str) -> None:
         tray = I3Tray()
@@ -299,7 +325,7 @@ class I3Plotter:
             for packet in entry:
                 if any([int(packet["interact_type"]) == n for n in interact_type]):
                     data.append([packet["vertex"], weights[counter]])
-                    counter += 1
+                counter += 1
 
         fig = PointCloud3D(data)
         fig.plot_2d_histograms("vertices.html")
