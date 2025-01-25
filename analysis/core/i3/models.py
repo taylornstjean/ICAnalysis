@@ -9,6 +9,7 @@ from icecube.icetray import I3Tray
 from analysis.utils import listdir_absolute
 from analysis.render import PointCloud3D
 from analysis.jobs import HTCondorJob
+from analysis import config
 
 from scipy.spatial import Delaunay
 
@@ -27,11 +28,22 @@ class I3File:
         _repr = os.path.basename(self._path)
         return _repr
 
-    def weight(self, index) -> iter:
-        with open("/data/i3home/tstjean/icecube/data/config/21220/config.21220.json") as config_file:
+    def to_hdf5(self, path: str) -> None:
+        tray = icetray.I3Tray()
+        tray.Add("I3Reader", 'reader', FileNameList=[self._path], DropBuffers=True)
+        tray.Add(
+            hdfwriter.I3HDFWriter,
+            SubEventStreams=["InIceSplit"],
+            keys=["PolyplopiaPrimary", "I3MCWeightDict"],
+            output=path
+        )
+        tray.Execute()
+
+    def weight(self, index, group_id) -> iter:
+        with open(os.path.join(config.BASE_DIR, f"data/config/{group_id}/config.{group_id}.json"), "r") as config_file:
             weight_config = json.load(config_file)
 
-        with open("/data/i3home/tstjean/icecube/data/weights/21220/weights.21220.json") as weights_file:
+        with open(os.path.join(config.BASE_DIR, f"data/config/{group_id}/weights.{group_id}.json"), "r") as weights_file:
             weight_data = json.load(weights_file)
 
         init_index = weight_config[repr(self).replace(".i3.zst", "")]["index_start"]
@@ -50,7 +62,7 @@ class I3File:
 
         return counter
 
-    def metadata(self) -> list:
+    def metadata(self, group_id) -> list:
         _metadata = []
         index = 0
 
@@ -78,7 +90,7 @@ class I3File:
                     "vertex": vertex,
                     "interact_type": interaction_type,
                     "alerts": alerts,
-                    "weight": self.weight(index)
+                    "weight": self.weight(index, group_id)
                 }]
 
                 index += 1
@@ -130,7 +142,7 @@ class I3FileGroup:
         self._directory = directory
         self._paths = listdir_absolute(self._directory)
         self.group_id = group_id
-        self._metadata_directory = f"/data/i3home/tstjean/icecube/data/metadata/{group_id}"
+        self._metadata_directory = os.path.join(config.BASE_DIR, f"data/metadata/{group_id}")
 
         for path in self._paths:
             if not path.endswith(".i3.zst"):
@@ -143,7 +155,7 @@ class I3FileGroup:
         return _repr
 
     def __iter__(self):
-        for obj in self. objects():
+        for obj in self.objects():
             yield obj
 
     def objects(self):
@@ -160,15 +172,16 @@ class I3FileGroup:
 
     def get_p_frame_count(self):
         job = HTCondorJob(
-            self._directory, "/data/i3home/tstjean/icecube/data/frame_counts/21220/physics/", "scripts/physics_frame_count.py", ".i3.zst", ".json"
+            self._directory, os.path.join(config.BASE_DIR, f"data/frame_counts/{self.group_id}/physics/"),
+            "scripts/physics_frame_count.py", ".i3.zst", ".json"
         )
         job.configure()
         job.submit(monitor=True)
 
     def generate_weight_config_file(self):
-        base_dir = f"/data/i3home/tstjean/icecube/data/frame_counts/{self.group_id}/physics"
+        base_dir = os.path.join(config.BASE_DIR, f"data/frame_counts/{self.group_id}/physics")
 
-        with open(f"/data/i3home/tstjean/icecube/data/config/{self.group_id}/merge_order.{self.group_id}.json", "r") as merge_order_file:
+        with open(os.path.join(config.BASE_DIR, f"data/config/{self.group_id}/merge_order.{self.group_id}.json"), "r") as merge_order_file:
             files = json.load(merge_order_file)
 
         index = 0
@@ -179,7 +192,7 @@ class I3FileGroup:
                 data[os.path.basename(file).replace(".hdf5", "")] = {"size": content["size"], "index_start": index}
                 index += content["size"]
 
-        with open(f"/data/i3home/tstjean/icecube/data/config/21220/config.{self.group_id}.json", "w+") as config_file:
+        with open(os.path.join(config.BASE_DIR, f"data/config/21220/config.{self.group_id}.json"), "w+") as config_file:
             json.dump(data, config_file, indent=4)
 
     def load_metadata(self) -> dict:
@@ -189,16 +202,13 @@ class I3FileGroup:
                 _metadata[i] = json.load(f)
         return _metadata
 
-    def to_hdf5(self, path: str) -> None:
-        tray = I3Tray()
-        tray.Add("I3Reader", FileNameList=self._paths)
-        tray.Add(
-            hdfwriter.I3HDFWriter,
-            SubEventStreams=["InIceSplit"],
-            keys=["PolyplopiaPrimary", "I3MCWeightDict"],
-            output=path
+    def to_hdf5(self) -> None:
+        job = HTCondorJob(
+            self._directory, os.path.join(config.BASE_DIR, f"data/hdf5/{self.group_id}"),
+            "scripts/i3_to_hdf5.py", ".i3.zst", ".hdf5"
         )
-        tray.Execute()
+        job.configure()
+        job.submit(monitor=True)
 
     def get_alert_rate(self, alert: str):
         def point_in_bounds(point):
@@ -231,7 +241,7 @@ class I3FileGroup:
 
                 count += entry["weight"]
 
-        rate_file_path = f"/data/i3home/tstjean/icecube/data/events/{self.group_id}/{alert.lower()}/rate.{alert.lower()}.{self.group_id}.json"
+        rate_file_path = os.path.join(config.BASE_DIR, f"data/events/{self.group_id}/{alert.lower()}/rate.{alert.lower()}.{self.group_id}.json")
 
         with open(rate_file_path, "w+") as rate_file:
             json.dump({"rate": count}, rate_file, indent=4)
@@ -252,7 +262,7 @@ class I3FileGroup:
 
         fig = PointCloud3D(data)
 
-        path = "/data/i3home/tstjean/icecube/data/plots/vertices.html"
+        path = os.path.join(config.BASE_DIR, "data/plots/vertices.html")
 
         if not projection:
             fig.plot_3d(path)

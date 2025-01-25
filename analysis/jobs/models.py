@@ -5,8 +5,9 @@ import time
 import os
 from tqdm import tqdm
 import subprocess
-from analysis import config
 from typing import Union
+
+from analysis import config
 
 
 ########################################################################################################################
@@ -87,9 +88,9 @@ class HTCondorJob:
         self._err_file_path = os.path.abspath(kwargs.get("err_file_path", os.path.join(job_dir, "logs/err/")))
 
         # allow modification of job.sub configurations
-        self._request_cpus = int(kwargs.get("request_cpus", 8))
+        self._request_cpus = int(kwargs.get("request_cpus", 2))
         self._request_memory = kwargs.get("request_memory", "1GB")
-        self._request_disk = kwargs.get("request_disk", "8GB")
+        self._request_disk = kwargs.get("request_disk", "2GB")
         self._universe = kwargs.get("universe", "vanilla")
         self._should_transfer_files = kwargs.get("should_transfer_files", "YES")
         self._when_to_transfer_output = kwargs.get("when_to_transfer_output", "ON_EXIT")

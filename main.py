@@ -19,17 +19,19 @@ import json
 
 def main():
 
-    h5filegroup = H5FileGroup("data/hdf5/21220")
-    h5filegroup.combine()
-
-    h5file = H5File("data/hdf5/21220/combined.21220.hdf5")
-    h5file.weights(9954, "data/weights/21220/weights.21220.json")
-
     i3filegroup = I3FileGroup(config.I3FILEDIR_NUMU, 21220)
-    i3filegroup.get_p_frame_count()
-    i3filegroup.generate_weight_config_file()
-    i3filegroup.extract_metadata()
-    i3filegroup.get_alert_rate("HESE")
+    i3filegroup.to_hdf5()
+
+    #h5filegroup = H5FileGroup("data/hdf5/21220", 21220)
+    #h5filegroup.combine()
+
+    #h5file = H5File("data/hdf5/21220/combined.21220.hdf5")
+    #h5file.weights(9954, "data/weights/21220/weights.21220.json")
+
+    #i3filegroup.get_p_frame_count()
+    #i3filegroup.generate_weight_config_file()
+    #i3filegroup.extract_metadata()
+    #i3filegroup.get_alert_rate("HESE")
 
 if __name__ == "__main__":
     main()

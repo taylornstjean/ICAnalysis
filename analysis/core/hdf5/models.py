@@ -8,7 +8,7 @@ from numpy.typing import ArrayLike
 import subprocess
 
 from analysis.render import SimweightHist, EventDetailHist
-from analysis.jobs import HTCondorJob
+from analysis import config
 
 class H5File:
 
@@ -77,13 +77,18 @@ class H5FileGroup:
 
     """Class for managing multiple .hdf5 files."""
 
-    def __init__(self, directory):
+    def __init__(self, directory, group_id):
         self._directory = directory
+        self.group_id = group_id
         self._paths = [os.path.join(directory, path) for path in os.listdir(directory) if not path.startswith("combined")]
 
     def combine(self):
-        merge_command = ["hdfwriter-merge", "-o", "/data/i3home/tstjean/icecube/data/hdf5/21220/combined.21220.hdf5"] + self._paths
+        merge_command = [
+            "hdfwriter-merge", "-o", os.path.join(
+                config.BASE_DIR, f"data/hdf5/{self.group_id}/combined.{self.group_id}.hdf5"
+            )
+        ] + self._paths
         subprocess.run(merge_command, check=True)
 
-        with open("/data/i3home/tstjean/icecube/data/config/21220/merge_order.21220.json", "w+") as order_file:
+        with open(os.path.join(config.BASE_DIR, f"data/config/{self.group_id}/merge_order.{self.group_id}.json"), "w+") as order_file:
             json.dump(self._paths, order_file, indent=4)
