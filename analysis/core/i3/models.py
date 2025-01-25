@@ -10,6 +10,8 @@ from analysis.utils import listdir_absolute
 from analysis.render import PointCloud3D
 from analysis.jobs import HTCondorJob
 
+from scipy.spatial import Delaunay
+
 
 class I3File:
 
@@ -35,21 +37,6 @@ class I3File:
         init_index = weight_config[repr(self).replace(".i3.zst", "")]["index_start"]
 
         return weight_data[index + init_index]
-
-    def get_HESE_count(self, x_bounds, y_bounds, z_bounds):
-        count = 0
-
-        for entry in self.metadata():
-            vertex = entry["vertex"]
-            if all([
-                (x_bounds[0] <= vertex[0] <= x_bounds[1]),
-                (y_bounds[0] <= vertex[1] <= y_bounds[1]),
-                (z_bounds[0] <= vertex[2] <= z_bounds[1])
-            ]):
-                if "HESE" in entry["alerts"]:
-                    count += 1
-
-        return count
 
     def p_frames(self):
         counter = 0
@@ -179,20 +166,20 @@ class I3FileGroup:
         job.submit(monitor=True)
 
     def generate_weight_config_file(self):
-        base_dir = "/data/i3home/tstjean/icecube/data/frame_counts/21220/physics"
+        base_dir = f"/data/i3home/tstjean/icecube/data/frame_counts/{self.group_id}/physics"
 
-        with open("/data/i3home/tstjean/icecube/data/config/21220/merge_order.21220.json", "r") as merge_order_file:
+        with open(f"/data/i3home/tstjean/icecube/data/config/{self.group_id}/merge_order.{self.group_id}.json", "r") as merge_order_file:
             files = json.load(merge_order_file)
 
         index = 0
         data = {}
         for file in files:
-            with open(os.path.join(base_dir, os.path.basename(file).replace("hdf5", "json")), "r") as size_file:
+            with open(os.path.join(base_dir, str(os.path.basename(file).replace("hdf5", "json"))), "r") as size_file:
                 content = json.load(size_file)
                 data[os.path.basename(file).replace(".hdf5", "")] = {"size": content["size"], "index_start": index}
                 index += content["size"]
 
-        with open("/data/i3home/tstjean/icecube/data/config/21220/config.21220.json", "w+") as config_file:
+        with open(f"/data/i3home/tstjean/icecube/data/config/21220/config.{self.group_id}.json", "w+") as config_file:
             json.dump(data, config_file, indent=4)
 
     def load_metadata(self) -> dict:
@@ -212,6 +199,44 @@ class I3FileGroup:
             output=path
         )
         tray.Execute()
+
+    def get_alert_rate(self, alert: str):
+        def point_in_bounds(point):
+            vertices = [
+                (-500., -500., -500.),  # Bottom face
+                (500., -500., -500.),
+                (500., 500., -500.),
+                (-500., 500., -500.),
+                (-500., -500., 500.),  # Top face
+                (500., -500., 500.),
+                (500., 500., 500.),
+                (-500., 500., 500.)
+            ]
+
+            delaunay = Delaunay(vertices)
+            return delaunay.find_simplex(point) >= 0
+
+
+        count = 0
+        for file in tqdm.tqdm(os.listdir(self._metadata_directory)):
+            with open(os.path.join(self._metadata_directory, file), "r") as metadata_file:
+                metadata = json.load(metadata_file)
+
+            for entry in metadata:
+                if not alert in entry["alerts"]:
+                    continue
+
+                if not point_in_bounds(entry["vertex"]):
+                    continue
+
+                count += entry["weight"]
+
+        rate_file_path = f"/data/i3home/tstjean/icecube/data/events/{self.group_id}/{alert.lower()}/rate.{alert.lower()}.{self.group_id}.json"
+
+        with open(rate_file_path, "w+") as rate_file:
+            json.dump({"rate": count}, rate_file, indent=4)
+
+        return count
 
     def plot_vertices(self, interact_type: list, projection: bool=False, histogram: bool=False, d: int=1) -> None:
         metadata = self.load_metadata()
