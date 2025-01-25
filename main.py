@@ -4,7 +4,6 @@
 
 import warnings
 
-from analysis.core.models import I3Plotter
 
 warnings.filterwarnings(
     "ignore",
@@ -12,7 +11,7 @@ warnings.filterwarnings(
     message=r".*to-Python converter for.*already registered.*"
 )
 
-from analysis.core import I3FileGroup, I3Plotter, I3File, H5File
+from analysis.core import I3FileGroup, H5File, H5FileGroup
 import analysis.config as config
 import os
 import json
@@ -20,25 +19,16 @@ import json
 
 def main():
 
-    # file = H5File("output/main.hdf5")
-    # weights = file.weights(9954)
+    # h5filegroup = H5FileGroup("data/hdf5/21220")
+    # h5filegroup.combine()
 
-    # group = I3FileGroup(config.I3FILEDIRMAIN)
-    # HESE_count = group.get_total_HESE_count([-500, 500], [-500, 500], [-500, 500])
-    # print(HESE_count)
+    # h5file = H5File("data/hdf5/21220/combined.21220.hdf5")
+    # h5file.weights(9954, "data/weights/21220/weights.21220.json")
 
-    # i3plotter = I3Plotter("/data/i3home/tstjean/icecube/jobs/output/json")
-    # i3plotter.plot([2], weights)
-
-    count = 0
-
-    for file in os.listdir("jobs/output/HC"):
-        with open(os.path.join("jobs/output/HC", file), "r") as f:
-            entry = json.load(f)
-            count += entry["HESE_count"]
-
-    with open("output/HESE_total_count", "w") as f:
-        json.dump({"HESE_total_count": count}, f)
+    i3filegroup = I3FileGroup(config.I3FILEDIR_NUMU, 21220)
+    # i3filegroup.get_p_frame_count()
+    # i3filegroup.generate_weight_config_file()
+    i3filegroup.extract_metadata()
 
 if __name__ == "__main__":
     main()
