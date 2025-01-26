@@ -140,115 +140,7 @@ class HTCondorJob:
             exit(1)
 
         if monitor:
-            self._monitor()
-
-    def _monitor(self) -> None:
-        """
-        Monitor the progress of submitted jobs. Once the job is finished, returns ``None``.
-        """
-        # initialize a flag so we only generate the progress bar on the first cycle
-        _init_pb_flag = False
-
-        while True:
-            try:
-                # pull the job status
-                status = self.status()
-
-                if not status:
-                    # if no status info was found in the file, wait until the next cycle
-                    continue
-
-                if not _init_pb_flag:
-                    # initialize a progress bar on first cycle
-                    progress_bar = tqdm(
-                        total=status["queued"] + status["ready"] + status["done"] + status["failed"],
-                        desc="Running jobs. 0 Failed.", unit="jobs"
-                    )
-                    _init_pb_flag = True
-
-                # update the progress bar to reflect current status
-                progress_bar.n = status["done"] + status["failed"]
-
-                # include the number of failed jobs in the description
-                progress_bar.set_description(f"Running jobs. {status['failed']} failed")
-
-                if status["queued"] + status["ready"] == 0:
-                    # break out of the loop once the job is complete
-                    return None
-
-                # run each cycle once per second
-                time.sleep(1)
-
-            except FileNotFoundError:
-                # file hasn't been generated yet, wait
-                print("\nWaiting for output file to be generated...")
-                time.sleep(1)
-
-            except IndexError:
-                # sometimes the file is queried when it has only generated the condition line, however following lines
-                # haven't been generated yet, leading to an IndexError when trying to pull following lines,
-                # in this case simply wait for the next cycle.
-                time.sleep(1)
-
-    def status(self, lines_after=2) -> Union[dict, None]:
-        """
-        Pull the status of the jobs from the DAGMan output file.
-
-        Args:
-            lines_after (int): Number of lines after the status header to parse.
-
-        Returns:
-            Union[dict, None]: A dictionary containing job status counts, or ``None`` if status isn't found in the file.
-        """
-        def __parse(output: str) -> dict:
-            """
-            Parser to convert a status string to a dict.
-
-            Args:
-                output (str): Status string pulled from dagman.out.
-
-            Returns:
-                Status dict.
-            """
-
-            # split by whitespace
-            values = [int(x) for x in output.split() if x.isdigit()]
-
-            # convert to a dict
-            _status = {
-                "done": values[0],
-                "pre": values[1],
-                "queued": values[2],
-                "post": values[3],
-                "ready": values[4],
-                "unready": values[5],
-                "failed": values[6],
-                "futile": values[7]
-            }
-
-            return _status
-
-        # look for this text in the dagman output file
-        condition_text = "  Done     Pre   Queued    Post   Ready   Un-Ready   Failed   Futile"
-
-        with open(self._dagman_out_file_path, 'r') as file:
-            # Read all lines in reverse order
-            lines = file.readlines()
-
-            # Iterate over lines in reverse order
-            for i in range(len(lines) - 1, -1, -1):
-                line = lines[i].strip()
-
-                # Check if the line matches the condition
-                if condition_text not in line:
-                    continue
-
-                # get the 'lines_after'-th line down from the condition text, and trim the entry time
-                content = lines[i + lines_after].strip()[17:]
-                status = __parse(content)
-                return status
-
-        return None
+            self.monitor(self._dagman_out_file_path)
 
     def configure(self, clean=False) -> None:
         """
@@ -367,5 +259,120 @@ class HTCondorJob:
         for path in os.listdir(os.path.dirname(self._dagman_file_path)):
             if not path.endswith("dagman.dag") and not path.startswith(".nfs"):
                 os.remove(os.path.join(os.path.dirname(self._dagman_file_path), path))
+
+    ############################################################################################################
+    # class methods
+
+    @classmethod
+    def monitor(cls, dagman_out_file_path) -> None:
+        """
+        Monitor the progress of submitted jobs. Once the job is finished, returns ``None``.
+        """
+        # initialize a flag so we only generate the progress bar on the first cycle
+        _init_pb_flag = False
+
+        while True:
+            try:
+                # pull the job status
+                status = cls.status(dagman_out_file_path)
+
+                if not status:
+                    # if no status info was found in the file, wait until the next cycle
+                    continue
+
+                if not _init_pb_flag:
+                    # initialize a progress bar on first cycle
+                    progress_bar = tqdm(
+                        total=status["queued"] + status["ready"] + status["done"] + status["failed"],
+                        desc="Running jobs. 0 Failed.", unit="jobs"
+                    )
+                    _init_pb_flag = True
+
+                # update the progress bar to reflect current status
+                progress_bar.n = status["done"] + status["failed"]
+
+                # include the number of failed jobs in the description
+                progress_bar.set_description(f"Running jobs. {status['failed']} failed")
+
+                if status["queued"] + status["ready"] == 0:
+                    # break out of the loop once the job is complete
+                    return None
+
+                # run each cycle once per second
+                time.sleep(1)
+
+            except FileNotFoundError:
+                # file hasn't been generated yet, wait
+                print("\nWaiting for output file to be generated...")
+                time.sleep(1)
+
+            except IndexError:
+                # sometimes the file is queried when it has only generated the condition line, however following lines
+                # haven't been generated yet, leading to an IndexError when trying to pull following lines,
+                # in this case simply wait for the next cycle.
+                time.sleep(1)
+
+    @classmethod
+    def status(cls, dagman_out_file_path, lines_after=2) -> Union[dict, None]:
+        """
+        Pull the status of the jobs from the DAGMan output file.
+
+        Args:
+            dagman_out_file_path (str): Path to the dagman.out file.
+            lines_after (int): Number of lines after the status header to parse.
+
+        Returns:
+            Union[dict, None]: A dictionary containing job status counts, or ``None`` if status isn't found in the file.
+        """
+
+        def __parse(output: str) -> dict:
+            """
+            Parser to convert a status string to a dict.
+
+            Args:
+                output (str): Status string pulled from dagman.out.
+
+            Returns:
+                Status dict.
+            """
+
+            # split by whitespace
+            values = [int(x) for x in output.split() if x.isdigit()]
+
+            # convert to a dict
+            _status = {
+                "done": values[0],
+                "pre": values[1],
+                "queued": values[2],
+                "post": values[3],
+                "ready": values[4],
+                "unready": values[5],
+                "failed": values[6],
+                "futile": values[7]
+            }
+
+            return _status
+
+        # look for this text in the dagman output file
+        condition_text = "  Done     Pre   Queued    Post   Ready   Un-Ready   Failed   Futile"
+
+        with open(dagman_out_file_path, 'r') as file:
+            # Read all lines in reverse order
+            lines = file.readlines()
+
+            # Iterate over lines in reverse order
+            for i in range(len(lines) - 1, -1, -1):
+                line = lines[i].strip()
+
+                # Check if the line matches the condition
+                if condition_text not in line:
+                    continue
+
+                # get the 'lines_after'-th line down from the condition text, and trim the entry time
+                content = lines[i + lines_after].strip()[17:]
+                status = __parse(content)
+                return status
+
+        return None
 
 ########################################################################################################################

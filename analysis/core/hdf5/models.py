@@ -163,6 +163,7 @@ class H5FileGroup:
         """
         Merges all the .hdf5 files in the directory into a single file, saves the merge order.
         """
+        print("Merging .hdf5 files to one master file...")
 
         # verify the directory exists
         os.makedirs(os.path.join(
@@ -177,7 +178,12 @@ class H5FileGroup:
         ] + self._paths
 
         # run merge
-        subprocess.run(merge_command, check=True)
+        subprocess.run(
+            merge_command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
 
         # verify the directory exists
         os.makedirs(os.path.join(

@@ -24,21 +24,16 @@ def main():
 
     run_group_id = config.RUN_GROUP_ID
 
-    nfiles = {
-        21220: 9954,
-        20878: 9995
-    }
-
     i3filegroup = I3FileGroup(config.I3FILEDIR_NUMU[run_group_id], run_group_id)
-    #i3filegroup.to_hdf5()
+    i3filegroup.to_hdf5()
 
-    #h5filegroup = H5FileGroup(f"data/hdf5/{run_group_id}", run_group_id)
-    #h5filegroup.combine()
+    h5filegroup = H5FileGroup(f"data/hdf5/{run_group_id}", run_group_id)
+    h5filegroup.combine()
 
-    #h5file = H5File(f"data/hdf5/{run_group_id}/combined.{run_group_id}.hdf5")
-    #h5file.weights(nfiles[run_group_id], run_group_id)
+    h5file = H5File(f"data/hdf5/{run_group_id}/combined.{run_group_id}.hdf5")
+    h5file.weights(config.NFILES[run_group_id], run_group_id)
 
-    #i3filegroup.get_p_frame_count()
+    i3filegroup.get_p_frame_count()
     i3filegroup.generate_weight_config_file()
     i3filegroup.extract_metadata()
     i3filegroup.get_alert_rate("HESE")

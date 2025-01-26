@@ -27,7 +27,7 @@ class I3File:
         _file (dataio.I3File): An instance of the `I3File` class from the `dataio` module used to read `.i3` files.
     """
 
-    __slots__ = ["_path", "_file"]
+    __slots__ = ["_path", "_file", "__weights_cache"]
 
     def __init__(self, path: str) -> None:
         """
@@ -38,6 +38,9 @@ class I3File:
        """
         self._path = path
         self._file = dataio.I3File(self._path)
+
+        # initialize cache for weights
+        self.__weights_cache = {}
 
     def __repr__(self) -> str:
         _repr = os.path.basename(self._path)
@@ -61,30 +64,33 @@ class I3File:
         )
         tray.Execute()
 
-    def weight(self, index, group_id) -> float:
+    def __preload_weights(self, group_id) -> None:
         """
-        Retrieves the weight associated with a specific index. The weights must be calculated for the file group
-        prior to calling this method.
+        Preloads weights into memory.
 
         Args:
-            index (int): The index for which to retrieve the weight.
             group_id (int): The dataset group id.
-
-        Returns:
-            float: The weight at the specified index.
         """
         # open and load the weights configuration file
-        with open(os.path.join(config.BASE_DIR, f"data/config/{group_id}/config.{group_id}.json"), "r") as config_file:
+        with open(
+            os.path.join(config.BASE_DIR, f"data/config/{group_id}/config.{group_id}.json"), "r"
+        ) as config_file:
             weight_config = json.load(config_file)
 
         # open and load the weights file
-        with open(os.path.join(config.BASE_DIR, f"data/weights/{group_id}/weights.{group_id}.json"), "r") as weights_file:
+        with open(
+            os.path.join(config.BASE_DIR, f"data/weights/{group_id}/weights.{group_id}.json"), "r"
+        ) as weights_file:
             weight_data = json.load(weights_file)
 
-        # pull the starting index for the current file from the weights configuration file
-        init_index = weight_config[repr(self).replace(".i3.zst", "")]["index_start"]
+        # pull the starting index and size for the current file from the weights configuration file
+        key = repr(self).replace(".i3.zst", "")
 
-        return weight_data[index + init_index]
+        init_index = weight_config[key]["index_start"]
+        frame_count = weight_config[key]["size"]
+
+        # save sliced values to conserve memory
+        self.__weights_cache = weight_data[init_index:init_index + frame_count + 1]
 
     def p_frames(self):
         """
@@ -116,6 +122,9 @@ class I3File:
         Returns:
             list: A list of dictionaries containing metadata for each Physics frame.
         """
+        # load weights into memory
+        self.__preload_weights(group_id)
+
         # initialize metadata list
         _metadata = []
         index = 0
@@ -133,62 +142,60 @@ class I3File:
             i3mc_wd = frame["I3MCWeightDict"]
             alerts = list(frame["AlertNamesPassed"])
 
+            if not mc_tree or not i3mc_wd:
+                continue
+
             # grab the primary neutrino
             primary_neutrino = dataclasses.get_most_energetic_primary(mc_tree)
 
-            if primary_neutrino is None or not self.is_neutrino(primary_neutrino):
+            if not primary_neutrino or not self.is_neutrino(primary_neutrino):
                 # if the primary neutrino is non-existent, or isn't even a neutrino, we don't care about it
                 continue
 
             # get the interacting neutrino
             interacting_neutrino = self.get_interacting_nu(primary_neutrino, mc_tree)
 
-            # get the vertex of the inteeraction
+            if not interacting_neutrino:
+                continue
+
+            # get the vertex of the interaction
             vertex = self.get_vertex(interacting_neutrino)
 
             # get the interaction type
             interaction_type = i3mc_wd["InteractionType"]
 
             # append it to the metadata list
-            _metadata += [{
+            _metadata.append({
                 "vertex": vertex,
                 "interact_type": interaction_type,
                 "alerts": alerts,
-                "weight": self.weight(index, group_id)
-            }]
+                "weight": self.__weights_cache[index]
+            })
 
             index += 1
 
         return _metadata
 
-    def get_interacting_nu(self, neutrino: I3Particle, mc_tree) -> I3Particle | None:
+    def get_interacting_nu(self, primary_neutrino: I3Particle, mc_tree) -> I3Particle | None:
         """
         Walks through the MC tree to find the first InIce neutrino.
 
         Args:
-            neutrino (I3Particle): The neutrino particle to check.
+            primary_neutrino (I3Particle): The neutrino particle to check.
             mc_tree: The MC tree containing particle information.
 
         Returns:
             I3Particle | None: The first InIce neutrino found, or None if no InIce neutrino is found.
         """
         # iterate through the tree, stopping when we find an InIce neutrino
-        while neutrino.location_type != dataclasses.I3Particle.LocationType.InIce:
-            children = mc_tree.get_daughters(neutrino)
-            _found_next = False
-
-            # iterate through each child particle
-            for child in children:
-                if self.is_neutrino(child):
-                    neutrino = child
-                    _found_next = True
-                    break
-
-            # if the tree ends, break
-            if not _found_next:
-                return None
-
-        return neutrino
+        stack = [primary_neutrino]
+        while stack:
+            # use stack approach to prevent recursion
+            neutrino = stack.pop()
+            if neutrino.location_type == dataclasses.I3Particle.LocationType.InIce:
+                return neutrino
+            stack.extend(child for child in mc_tree.get_daughters(neutrino) if self.is_neutrino(child))
+        return None
 
     @staticmethod
     def get_vertex(neutrino: I3Particle) -> [float]:
@@ -280,12 +287,16 @@ class I3FileGroup:
 
         This method submits a job to HTCondor to run the metadata extraction script.
         """
+        print("Extracting metadata for each event...")
+
         # verify the output directory exists
         os.makedirs(self._metadata_directory, exist_ok=True)
 
         # create and submit htcondor job
         job = HTCondorJob(
-            self._directory, self._metadata_directory, "scripts/extract_i3_metadata.py", ".i3.zst", ".json"
+            self._directory, self._metadata_directory,
+            "scripts/extract_i3_metadata.py", ".i3.zst", ".json",
+            request_cpus=6, request_memory="2GB", request_disk="4GB"
         )
         job.configure(clean=True)
         job.submit(monitor=True)
@@ -297,6 +308,8 @@ class I3FileGroup:
 
         This method submits a job to HTCondor to run the frame counting script.
         """
+        print("Counting physics frames...")
+
         # verify the output directory exists
         path = os.path.join(config.BASE_DIR, f"data/frame_counts/{self.group_id}/physics/")
         os.makedirs(path, exist_ok=True)
@@ -313,6 +326,8 @@ class I3FileGroup:
         """
         Generates a weight configuration file that contains file sizes and index start information for each file.
         """
+        print("\nGenerating the weights configuration file...")
+
         # verify the directory exists
         frame_count_dir = os.path.join(config.BASE_DIR, f"data/frame_counts/{self.group_id}/physics")
         os.makedirs(frame_count_dir, exist_ok=True)
@@ -361,6 +376,8 @@ class I3FileGroup:
 
         This method submits a job to HTCondor to run the conversion script.
         """
+        print("\nConverting .i3 files to .hdf5 file format...")
+
         # verify the output directory exists
         path = os.path.join(config.BASE_DIR, f"data/hdf5/{self.group_id}")
         os.makedirs(path, exist_ok=True)
@@ -383,6 +400,7 @@ class I3FileGroup:
         Returns:
             int: The computed alert rate.
         """
+        print("\nComputing an alert rate...")
         def point_in_bounds(point):
             """
             Checks if a point is within a predefined bounding volume.
