@@ -11,27 +11,37 @@ warnings.filterwarnings(
     message=r".*to-Python converter for.*already registered.*"
 )
 
+warnings.filterwarnings(
+    "ignore",
+    message=".*HDF5 library version mismatched error.*"
+)
+
 from analysis.core import I3FileGroup, H5File, H5FileGroup
 import analysis.config as config
-import os
-import json
 
 
 def main():
 
-    i3filegroup = I3FileGroup(config.I3FILEDIR_NUMU, 21220)
-    i3filegroup.to_hdf5()
+    run_group_id = config.RUN_GROUP_ID
 
-    #h5filegroup = H5FileGroup("data/hdf5/21220", 21220)
+    nfiles = {
+        21220: 9954,
+        20878: 9995
+    }
+
+    i3filegroup = I3FileGroup(config.I3FILEDIR_NUMU[run_group_id], run_group_id)
+    #i3filegroup.to_hdf5()
+
+    #h5filegroup = H5FileGroup(f"data/hdf5/{run_group_id}", run_group_id)
     #h5filegroup.combine()
 
-    #h5file = H5File("data/hdf5/21220/combined.21220.hdf5")
-    #h5file.weights(9954, "data/weights/21220/weights.21220.json")
+    #h5file = H5File(f"data/hdf5/{run_group_id}/combined.{run_group_id}.hdf5")
+    #h5file.weights(nfiles[run_group_id], run_group_id)
 
     #i3filegroup.get_p_frame_count()
-    #i3filegroup.generate_weight_config_file()
-    #i3filegroup.extract_metadata()
-    #i3filegroup.get_alert_rate("HESE")
+    i3filegroup.generate_weight_config_file()
+    i3filegroup.extract_metadata()
+    i3filegroup.get_alert_rate("HESE")
 
 if __name__ == "__main__":
     main()

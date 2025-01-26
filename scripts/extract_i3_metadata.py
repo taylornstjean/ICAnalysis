@@ -11,6 +11,7 @@ def main():
 
     try:
         from analysis.core import I3File
+        from analysis import config
     except ImportError as e:
         print(f"Error importing 'analysis': {e}")
         sys.exit(1)
@@ -18,7 +19,7 @@ def main():
     import json
 
     file = I3File(args.input_file)
-    metadata = file.metadata(21220)
+    metadata = file.metadata(config.RUN_GROUP_ID)
 
     with open(args.output_file, "w+") as metadata_file:
         json.dump(metadata, metadata_file, indent=4)

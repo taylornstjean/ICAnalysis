@@ -1,8 +1,12 @@
+########################################################################################################################
+# imports
+
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+########################################################################################################################
 
 class EventDetailHist:
 
@@ -67,16 +71,19 @@ class PointCloud3D:
         self._rz_color = [r * z for r, z in zip(self._r, self._z)]
 
     def plot_3d(self, path: str):
+        # initialize figure
         _fig = go.Figure(data=[
             go.Scatter3d(x=self._x, y=self._y, z=self._z, mode="markers", marker={"size": 3})
         ])
 
+        # label axes
         _fig.update_layout(scene=dict(
             xaxis_title="X Axis",
             yaxis_title="Y Axis",
             zaxis_title="Z Axis"
         ))
 
+        # save the file (reference cdn instead of including plotly.js)
         _fig.write_html(path, include_plotlyjs="cdn")
 
     def plot_2d_projections(self, path: str):
@@ -102,8 +109,10 @@ class PointCloud3D:
         _fig.write_html(path, include_plotlyjs="cdn")
 
     def plot_1d_histograms(self, path: str):
+        # initialize figure
         _fig = make_subplots(rows=2, cols=2, subplot_titles=("X", "Y", "Z", "R"))
 
+        # label axes
         _fig.update_xaxes(title_text="X", row=1, col=1)
         _fig.update_xaxes(title_text="Y", row=1, col=2)
         _fig.update_xaxes(title_text="Z", row=2, col=1)
@@ -114,6 +123,7 @@ class PointCloud3D:
         _fig.update_yaxes(title_text="Count", row=2, col=1)
         _fig.update_yaxes(title_text="Count", row=2, col=2)
 
+        # populate with data
         _fig.add_trace(
             go.Histogram(x=self._x, nbinsx=200),
             row=1, col=1
@@ -131,12 +141,14 @@ class PointCloud3D:
             row=2, col=2
         )
 
+        # save the file (reference cdn instead of including plotly.js)
         _fig.write_html(path, include_plotlyjs="cdn")
 
     def plot_2d_histograms(self, path: str):
-
+        # initialize figure
         _fig = make_subplots(rows=1, cols=2, subplot_titles=("X vs Y", "R vs Z"), horizontal_spacing=0.2)
 
+        # label axes
         _fig.update_xaxes(title_text="X", row=1, col=1)
         _fig.update_xaxes(title_text="R", row=1, col=2)
 
@@ -199,6 +211,7 @@ class PointCloud3D:
         # Set figure dimensions
         _fig.update_layout(height=700, width=1400)
 
-        # Write to an HTML file
+        # save the file (reference cdn instead of including plotly.js)
         _fig.write_html(path, include_plotlyjs="cdn")
 
+########################################################################################################################

@@ -95,6 +95,10 @@ class HTCondorJob:
         self._should_transfer_files = kwargs.get("should_transfer_files", "YES")
         self._when_to_transfer_output = kwargs.get("when_to_transfer_output", "ON_EXIT")
 
+        # verify log directories exist
+        for path in [self._log_file_path, self._out_file_path, self._err_file_path]:
+            os.makedirs(path, exist_ok=True)
+
     def submit(self, monitor: bool=False) -> None:
         """
         Submit the DAGMan job to HTCondor.
@@ -236,22 +240,29 @@ class HTCondorJob:
                 line = lines[i].strip()
 
                 # Check if the line matches the condition
-                if condition_text in line:
+                if condition_text not in line:
+                    continue
 
-                    # get the 'lines_after'-th line down from the condition text, and trim the entry time
-                    content = lines[i + lines_after].strip()[17:]
-                    status = __parse(content)
-                    return status
+                # get the 'lines_after'-th line down from the condition text, and trim the entry time
+                content = lines[i + lines_after].strip()[17:]
+                status = __parse(content)
+                return status
 
         return None
 
-    def configure(self) -> None:
+    def configure(self, clean=False) -> None:
         """
         Generate relevant configuration files and clear log directories.
+
+        Args:
+            clean (bool): Clear out old run files from log directories. Defaults to False.
         """
 
-        # run job setup
-        self.clean_logs()
+        # run job cleanup if necessary
+        if clean:
+            self.clean_logs()
+
+        # generate job files
         self.create_job_sh()
         self.create_job_sub()
         self.create_dag()
@@ -278,6 +289,9 @@ class HTCondorJob:
 
         print("\n")
 
+        # verify the directory exists
+        os.makedirs(os.path.dirname(self._dagman_file_path), exist_ok=True)
+
         # save the file
         with open(self._dagman_file_path, 'w') as fwrite:
             fwrite.write(instructions)
@@ -295,6 +309,9 @@ class HTCondorJob:
         content += '\n\ninput_file=$1\noutput_file=$2'
         content += f'\n\nscript_path="{self._script_path}"'
         content += '\n\n"$SROOT"/metaprojects/icetray/v1.8.2/env-shell.sh /data/i3home/tstjean/icecube/venv/bin/python3.11 $script_path -i "$input_file" -o "$output_file"'
+
+        # verify the directory exists
+        os.makedirs(os.path.dirname(self._job_sh_file_path), exist_ok=True)
 
         # save the file
         with open(self._job_sh_file_path, "w") as job_sh:
@@ -325,6 +342,9 @@ class HTCondorJob:
 
         content += "\n\nqueue"
 
+        # verify the directory exists
+        os.makedirs(os.path.dirname(self._job_sub_file_path), exist_ok=True)
+
         # save the file
         with open(self._job_sub_file_path, "w") as job_sub:
             job_sub.write(content)
@@ -338,6 +358,9 @@ class HTCondorJob:
             for file in os.listdir(path):
                 abs_path = os.path.join(path, file)
                 os.remove(abs_path)
+
+        # verify the dagman directory exists, since this function can be run before create_dag() method
+        os.makedirs(os.path.dirname(self._dagman_file_path), exist_ok=True)
 
         # iterate over files within the dag directory, removing all that are not the dagman.dag file,
         # and skip temporary system files (starting with .nfs)
