@@ -296,6 +296,7 @@ class I3FileGroup:
         job = HTCondorJob(
             self._directory, self._metadata_directory,
             "scripts/extract_i3_metadata.py", ".i3.zst", ".json",
+            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
             request_cpus=6, request_memory="2GB", request_disk="4GB"
         )
         job.configure(clean=True)
@@ -317,7 +318,8 @@ class I3FileGroup:
         # create and submit htcondor job
         job = HTCondorJob(
             self._directory, path,
-            "scripts/physics_frame_count.py", ".i3.zst", ".json"
+            "scripts/physics_frame_count.py", ".i3.zst", ".json",
+            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
         )
         job.configure(clean=True)
         job.submit(monitor=True)
@@ -385,7 +387,8 @@ class I3FileGroup:
         # create and submit htcondor job
         job = HTCondorJob(
             self._directory, path,
-            "scripts/i3_to_hdf5.py", ".i3.zst", ".hdf5"
+            "scripts/i3_to_hdf5.py", ".i3.zst", ".hdf5",
+            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
         )
         job.configure(clean=True)
         job.submit(monitor=True)

@@ -23,6 +23,7 @@ class HTCondorJob:
             _script_path (str): Path to the script to be executed for each job.
             _input_file_ext (str): File extension of the input files.
             _output_file_ext (str): File extension of the output files.
+            _python_executable_path (str): Path to the python executable to use (for virtual environments). Defaults to python3.
             _dagman_file_path (str): Path to the DAGMan file.
             _config_file_path (str): Path to the configuration file.
             _job_sub_file_path (str): Path to the job submission file.
@@ -67,6 +68,9 @@ class HTCondorJob:
         self._script_path = os.path.abspath(script_path)
         self._input_file_ext = input_file_ext
         self._output_file_ext = output_file_ext
+
+        # optionally activate a virtual environment
+        self._python_executable_path = os.path.abspath(kwargs.get("python_executable_path", "python3"))
 
         # job directory
         job_dir = os.path.join(config.BASE_DIR, "analysis/jobs")
@@ -200,7 +204,7 @@ class HTCondorJob:
         content += "\n\neval $(/cvmfs/icecube.opensciencegrid.org/py3-v4.3.0/setup.sh)"
         content += '\n\ninput_file=$1\noutput_file=$2'
         content += f'\n\nscript_path="{self._script_path}"'
-        content += '\n\n"$SROOT"/metaprojects/icetray/v1.8.2/env-shell.sh /data/i3home/tstjean/icecube/venv/bin/python3.11 $script_path -i "$input_file" -o "$output_file"'
+        content += f'\n\n"$SROOT"/metaprojects/icetray/v1.8.2/env-shell.sh {self._python_executable_path} $script_path -i "$input_file" -o "$output_file"'
 
         # verify the directory exists
         os.makedirs(os.path.dirname(self._job_sh_file_path), exist_ok=True)
@@ -335,7 +339,6 @@ class HTCondorJob:
             Returns:
                 Status dict.
             """
-
             # split by whitespace
             values = [int(x) for x in output.split() if x.isdigit()]
 
