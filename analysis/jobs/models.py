@@ -3,6 +3,7 @@
 
 import time
 import os
+import json
 from tqdm import tqdm
 import subprocess
 from typing import Union
@@ -15,7 +16,10 @@ from analysis import config
 
 class HTCondorJob:
     """
-        A class for managing HTCondor jobs using DAGMan.
+        A class for managing HTCondor jobs using DAGMan. Macros can be set by passing them as keyword args (i.e. to
+        set DAGMAN_SUBMIT_DELAY, pass DAGMAN_SUBMIT_DELAY=<value>). See DAGMan configuration macros documentation for
+        configuration options
+        (https://htcondor.readthedocs.io/en/latest/admin-manual/configuration-macros.html#dagman-configuration).
 
         Attributes:
             _input_files (list): List of input file paths matching the specified extension.
@@ -38,6 +42,7 @@ class HTCondorJob:
             _universe (str): HTCondor universe for the job.
             _should_transfer_files (str): Indicates whether files should be transferred.
             _when_to_transfer_output (str): When to transfer output files.
+            _dagman_configurations (dict): A dict holding DAGMan macro values.
         """
 
     def __init__(
@@ -60,6 +65,9 @@ class HTCondorJob:
                 output_file_ext (str): File extension of output files.
                 **kwargs: Additional configuration paths and parameters.
         """
+        # initialize cache attributes
+        self.job_id = None
+
         # required input parameters
         self._input_files = [
             os.path.join(input_dir, path) for path in os.listdir(input_dir) if path.endswith(input_file_ext)
@@ -80,7 +88,8 @@ class HTCondorJob:
         self._config_file_path = os.path.abspath(kwargs.get("config_file_path", os.path.join(job_dir, "conf/config.dag")))
         self._job_sub_file_path = os.path.abspath(kwargs.get("job_sub_file_path", os.path.join(job_dir, "conf/job.sub")))
         self._job_sh_file_path = os.path.abspath(kwargs.get("job_sh_file_path", os.path.join(job_dir, "conf/job.sh")))
-
+        self._config_dag_file_path = os.path.abspath(kwargs.get("config_dag_file_path", os.path.join(job_dir, "conf/config.dag")))
+                                                 
         # htc will by default generate the dagman.out file in the same directory as the dagman.dag file
         self._dagman_out_file_path = os.path.join(
             os.path.dirname(self._dagman_file_path), os.path.basename(self._dagman_file_path) + ".dagman.out"
@@ -98,6 +107,14 @@ class HTCondorJob:
         self._universe = kwargs.get("universe", "vanilla")
         self._should_transfer_files = kwargs.get("should_transfer_files", "YES")
         self._when_to_transfer_output = kwargs.get("when_to_transfer_output", "ON_EXIT")
+
+        # load config.dag configurations
+        with open(os.path.join(job_dir, "defaults/config.dag.json"), "r") as config_dag:
+            __dagman_configurations = json.load(config_dag)
+
+        self._dagman_configurations = {}
+        for macro, value in __dagman_configurations.items():
+            self._dagman_configurations[macro] = kwargs.get(macro, value)
 
         # verify log directories exist
         for path in [self._log_file_path, self._out_file_path, self._err_file_path]:
@@ -119,7 +136,6 @@ class HTCondorJob:
         ]
 
         try:
-
             # submit the job, and print the submission status
             submit_result = subprocess.run(submit_dag_args, check=True, text=True, capture_output=True)
             print(submit_result.stdout)
@@ -137,6 +153,7 @@ class HTCondorJob:
                 # if we cannot pull the cluster ID, there is likely a problem that needs to be addressed
                 raise ValueError("Unable to extract job ID from submission output.")
 
+            self.job_id = job_id
             print(f"Job ID: {job_id}")
 
         except subprocess.CalledProcessError as e:
@@ -162,6 +179,7 @@ class HTCondorJob:
         self.create_job_sh()
         self.create_job_sub()
         self.create_dag()
+        self.create_config_dag()
 
     def create_dag(self) -> None:
         """
@@ -244,6 +262,21 @@ class HTCondorJob:
         # save the file
         with open(self._job_sub_file_path, "w") as job_sub:
             job_sub.write(content)
+
+    def create_config_dag(self):
+        """
+        Generates the DAGMan config file.
+        """
+        print(f"Generating config.dag file at {self._config_dag_file_path}...")
+
+        # collect configurations
+        content = ""
+        for macro, value in self._dagman_configurations.items():
+            content += f"{macro} = {value}\n"
+
+        # save to configuration file
+        with open(self._config_dag_file_path, "w") as config_dag:
+            config_dag.write(content)
 
     def clean_logs(self) -> None:
         """

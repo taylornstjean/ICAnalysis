@@ -4,6 +4,8 @@
 import os
 import json
 import tqdm
+import subprocess
+import platform
 
 from icecube import icetray, dataio, dataclasses, hdfwriter
 from icecube.dataclasses import I3Particle
@@ -11,6 +13,7 @@ from icecube.dataclasses import I3Particle
 from analysis.utils import listdir_absolute
 from analysis.render import PointCloud3D
 from analysis.jobs import HTCondorJob
+from analysis.core.modules import I3Alerts
 from analysis import config
 
 from scipy.spatial import Delaunay
@@ -56,10 +59,11 @@ class I3File:
 
         tray = icetray.I3Tray()
         tray.Add("I3Reader", 'reader', FileNameList=[self._path], DropBuffers=True)
+        tray.Add(I3Alerts)
         tray.Add(
             hdfwriter.I3HDFWriter,
             SubEventStreams=["InIceSplit"],
-            keys=["PolyplopiaPrimary", "I3MCWeightDict"],
+            keys=["PolyplopiaPrimary", "I3MCWeightDict", "HESEBool"],
             output=path
         )
         tray.Execute()
@@ -297,7 +301,8 @@ class I3FileGroup:
             self._directory, self._metadata_directory,
             "scripts/extract_i3_metadata.py", ".i3.zst", ".json",
             python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
-            request_cpus=6, request_memory="2GB", request_disk="4GB"
+            request_cpus=6, request_memory="2GB", request_disk="4GB", DAGMAN_MAX_JOBS_SUBMITTED=5000,
+            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1
         )
         job.configure(clean=True)
         job.submit(monitor=True)
@@ -319,7 +324,8 @@ class I3FileGroup:
         job = HTCondorJob(
             self._directory, path,
             "scripts/physics_frame_count.py", ".i3.zst", ".json",
-            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
+            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11", DAGMAN_MAX_JOBS_SUBMITTED=5000,
+            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1
         )
         job.configure(clean=True)
         job.submit(monitor=True)
@@ -388,7 +394,8 @@ class I3FileGroup:
         job = HTCondorJob(
             self._directory, path,
             "scripts/i3_to_hdf5.py", ".i3.zst", ".hdf5",
-            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
+            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11", DAGMAN_MAX_JOBS_SUBMITTED=5000,
+            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1
         )
         job.configure(clean=True)
         job.submit(monitor=True)
@@ -404,31 +411,6 @@ class I3FileGroup:
             int: The computed alert rate.
         """
         print("\nComputing an alert rate...")
-        def point_in_bounds(point):
-            """
-            Checks if a point is within a predefined bounding volume.
-
-            Args:
-                point (tuple): A tuple representing the coordinates of the point.
-
-            Returns:
-                bool: True if the point is within the bounds, False otherwise.
-            """
-            # define the vertices of the bounding volume (simply a cube for now)
-            vertices = [
-                (-500., -500., -500.),  # Bottom face
-                (500., -500., -500.),
-                (500., 500., -500.),
-                (-500., 500., -500.),
-                (-500., -500., 500.),  # Top face
-                (500., -500., 500.),
-                (500., 500., 500.),
-                (-500., 500., 500.)
-            ]
-
-            # use scipy.Delaunay to determine if the point is within the polygon defined by the bounding vertices
-            delaunay = Delaunay(vertices)
-            return delaunay.find_simplex(point) >= 0
 
         count = 0
 
@@ -443,10 +425,6 @@ class I3FileGroup:
 
                 # skip if the entry does not include the specified alert
                 if not alert in entry["alerts"]:
-                    continue
-
-                # skip if the vertex is not within the detector
-                if not point_in_bounds(entry["vertex"]):
                     continue
 
                 # add the weighted event count to the tally

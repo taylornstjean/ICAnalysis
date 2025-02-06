@@ -68,17 +68,17 @@ class H5File:
             zenith = np.array([])
         return zenith
 
-    def weights(self, nfiles, group_id: int, spectrum_exp: float=-2.19) -> tuple:
+    def weights(self, nfiles, group_id: int, spectrum_exp: float=-2.37) -> tuple:
         """
         Calculates weights for the data set.
 
         Args:
             nfiles (int): Number of constituent files in the .hdf5 file.
             group_id (int): The dataset group id.
-            spectrum_exp (float): Assumed spectrum (E^spectrum_exp). Defaults to -2.19.
+            spectrum_exp (float): Assumed spectrum (E^spectrum_exp). Defaults to -2.37.
 
         Returns:
-            tuple: Tuple of the form (Weights, Primary Energies)
+            tuple: Tuple of the form (Weights, Primary Energies, HESEBool)
         """
         print("Calculating weights, this may take a while for files with large numbers of events.")
 
@@ -93,6 +93,7 @@ class H5File:
 
             # define the weighter and calculate weights, pull primary energy
             weighter = simweights.NuGenWeighter(hdfstore, nfiles=nfiles)
+            hese = weighter.get_column("HESEBool", "value")
 
             weight = weighter.get_weights(_northern_track)
             primary_energy = weighter.get_column("PolyplopiaPrimary", "energy")
@@ -104,7 +105,7 @@ class H5File:
         with open(os.path.join(path, f"weights.{group_id}.json"), "w+") as weight_file:
             json.dump(list(weight), weight_file)
 
-        return weight, primary_energy
+        return weight, primary_energy, hese
 
     def plot_distribution(self, path: str, nfiles: int, group_id: int) -> None:
         """

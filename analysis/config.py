@@ -1,6 +1,6 @@
 # Contains path configurations
 
-RUN_GROUP_ID = 21002
+RUN_GROUP_ID = 21220
 
 NFILES = {
         21220: 9954,
