@@ -124,7 +124,7 @@ class H5File:
         hist.populate(primary_energy, weight)
         hist.save(path)
 
-    def plot_event_details(self, path: str):
+    def plot_event_details(self, path: str, weights):
         """
         Generates and saves a plot of event details (charge and zenith).
 
@@ -133,7 +133,7 @@ class H5File:
         """
         # create an EventDetailHist object and populate it
         hist = EventDetailHist()
-        hist.populate(self.charge, self.zenith)
+        hist.populate(self.charge, self.zenith, weights)
         hist.save(path)
 
 

@@ -4,19 +4,32 @@
 import os
 import json
 import tqdm
+from glob import glob
 import subprocess
 import platform
+import tempfile
 
 from icecube import icetray, dataio, dataclasses, hdfwriter
 from icecube.dataclasses import I3Particle
 
-from analysis.utils import listdir_absolute
+from analysis.utils import listdir_absolute, reset_temp_dir
 from analysis.render import PointCloud3D
-from analysis.jobs import HTCondorJob
+from analysis.jobs import HTCondorJob, HTCondorBatch
 from analysis.core.modules import I3Alerts
 from analysis import config
 
 from scipy.spatial import Delaunay
+
+from graphnet.data.extractors.icecube import (
+    I3FeatureExtractorIceCube86,
+    I3RetroExtractor,
+    I3TruthExtractor,
+)
+from graphnet.data.dataconverter import DataConverter
+from graphnet.data.parquet import ParquetDataConverter
+from graphnet.data.sqlite import SQLiteDataConverter
+from graphnet.utilities.imports import has_icecube_package
+from graphnet.utilities.logging import Logger
 
 ########################################################################################################################
 
@@ -251,6 +264,11 @@ class I3FileGroup:
         _metadata_directory (str): The directory where metadata for the files is stored.
     """
 
+    CONVERTER_CLASS = {
+        "sqlite": SQLiteDataConverter,
+        "parquet": ParquetDataConverter,
+    }
+
     def __init__(self, directory: str, group_id: int) -> None:
         """
         Initializes the I3FileGroup with a specified directory and group ID.
@@ -275,6 +293,28 @@ class I3FileGroup:
         _repr = self._directory
         return _repr
 
+    def backend_convert(self, backend: str):
+        assert backend in self.CONVERTER_CLASS
+
+        # define file paths
+        inputs = [self._directory]
+        outdir = os.path.join(config.BASE_DIR, f"data/backend/{self.group_id}/")
+        gcd_rescue = config.SAMPLE_GCD_FILE
+
+        # initialize the converter
+        converter = self.CONVERTER_CLASS[backend](
+            extractors=[
+                I3FeatureExtractorIceCube86("InIceDSTPulses"),
+                I3TruthExtractor(),
+            ],
+            outdir=outdir,
+            gcd_rescue=gcd_rescue,
+            workers=40,
+        )
+        converter(inputs)
+        if backend == "sqlite":
+            converter.merge_files()
+
     def objects(self) -> I3File:
         """
        Returns an iterator over `I3File` objects corresponding to the `.i3.zst` files in the group.
@@ -284,99 +324,6 @@ class I3FileGroup:
        """
         for path in self._paths:
             yield I3File(path)
-
-    def extract_metadata(self) -> None:
-        """
-        Extracts metadata from the `.i3.zst` files and stores them as `.json` files in the metadata directory.
-
-        This method submits a job to HTCondor to run the metadata extraction script.
-        """
-        print("Extracting metadata for each event...")
-
-        # verify the output directory exists
-        os.makedirs(self._metadata_directory, exist_ok=True)
-
-        # create and submit htcondor job
-        job = HTCondorJob(
-            self._directory, self._metadata_directory,
-            "scripts/extract_i3_metadata.py", ".i3.zst", ".json",
-            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11",
-            request_cpus=6, request_memory="2GB", request_disk="4GB", DAGMAN_MAX_JOBS_SUBMITTED=5000,
-            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1
-        )
-        job.configure(clean=True)
-        job.submit(monitor=True)
-
-
-    def get_p_frame_count(self) -> None:
-        """
-        Calculates the physics frame count for the `.i3.zst` files and stores the results as `.json` files.
-
-        This method submits a job to HTCondor to run the frame counting script.
-        """
-        print("Counting physics frames...")
-
-        # verify the output directory exists
-        path = os.path.join(config.BASE_DIR, f"data/frame_counts/{self.group_id}/physics/")
-        os.makedirs(path, exist_ok=True)
-
-        # create and submit htcondor job
-        job = HTCondorJob(
-            self._directory, path,
-            "scripts/physics_frame_count.py", ".i3.zst", ".json",
-            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11", DAGMAN_MAX_JOBS_SUBMITTED=5000,
-            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1
-        )
-        job.configure(clean=True)
-        job.submit(monitor=True)
-
-    def generate_weight_config_file(self) -> None:
-        """
-        Generates a weight configuration file that contains file sizes and index start information for each file.
-        """
-        print("\nGenerating the weights configuration file...")
-
-        # verify the directory exists
-        frame_count_dir = os.path.join(config.BASE_DIR, f"data/frame_counts/{self.group_id}/physics")
-        os.makedirs(frame_count_dir, exist_ok=True)
-
-        # verify the directory exists
-        config_dir = os.path.join(config.BASE_DIR, f"data/config/{self.group_id}")
-        os.makedirs(config_dir, exist_ok=True)
-
-        # load the merge order
-        with open(os.path.join(config_dir, f"merge_order.{self.group_id}.json"), "r") as merge_order_file:
-            files = json.load(merge_order_file)
-
-        index = 0
-        data = {}
-
-        # iterate over files, open them, and determine index information
-        for file in files:
-            with open(os.path.join(frame_count_dir, str(os.path.basename(file).replace("hdf5", "json"))), "r") as size_file:
-                content = json.load(size_file)
-                data[os.path.basename(file).replace(".hdf5", "")] = {"size": content["size"], "index_start": index}
-                index += content["size"]
-
-        # save the index information to a configuration file
-        with open(os.path.join(config_dir, f"config.{self.group_id}.json"), "w+") as config_file:
-            json.dump(data, config_file, indent=4)
-
-    def load_metadata(self) -> dict:
-        """
-        Loads metadata from `.json` files in the metadata directory.
-
-        Returns:
-            dict: A dictionary containing the loaded metadata.
-        """
-        _metadata = {}
-
-        # iterate over each metadata file and save the content to a dict
-        for i, file in tqdm.tqdm(enumerate(self._metadata_directory)):
-            with open(file, 'r') as f:
-                _metadata[i] = json.load(f)
-
-        return _metadata
 
     def to_hdf5(self) -> None:
         """
@@ -395,7 +342,8 @@ class I3FileGroup:
             self._directory, path,
             "scripts/i3_to_hdf5.py", ".i3.zst", ".hdf5",
             python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11", DAGMAN_MAX_JOBS_SUBMITTED=5000,
-            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1
+            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1,
+            venv_path="/data/i3home/tstjean/icecube/venv/bin/activate"
         )
         job.configure(clean=True)
         job.submit(monitor=True)
@@ -487,5 +435,55 @@ class I3FileGroup:
             fig.plot_1d_histograms(path)
         elif d == 2:
             fig.plot_2d_histograms(path)
+
+
+class I3BatchManager:
+    """Class to generate batches for processing, generally for HTCondor submissions."""
+
+    def __init__(self, directory: str, group_id: int):
+        self._directory = directory
+        self._group_id = group_id
+
+    def batch_backend_convert(self):
+
+        # clean the temp directory
+        reset_temp_dir()
+
+        batch_size = 100
+
+        def split_files(directory: str, b_size: int):
+            """Split the files into batches"""
+            files = sorted(glob(f"{directory}/*.i3.zst"))  # List and sort files
+            batches = [files[i:i + b_size] for i in range(0, len(files), b_size)]
+            return batches
+
+        # define the base temp directory
+        temp_dir = tempfile.mkdtemp(dir=os.path.join(config.BASE_DIR, "data/temp"))
+
+        # create a temp subdir for each batch, and simlink the batch contents
+        sub_dirs = []
+        for batch in split_files(self._directory, batch_size):
+            sub_dirs.append(tempfile.mkdtemp(dir=temp_dir))
+
+            for file in batch:
+                os.symlink(file, os.path.join(sub_dirs[-1], os.path.basename(file)))
+
+        # init the jobs
+        path = os.path.join(config.BASE_DIR, f"data/backend/{self._group_id}")
+        os.makedirs(path, exist_ok=True)
+
+        job = HTCondorBatch(
+            temp_dir, path,
+            "scripts/backend_convert_sqlite.py", ".i3.zst", "",
+            python_executable_path="/data/i3home/tstjean/icecube/venv/bin/python3.11", DAGMAN_MAX_JOBS_SUBMITTED=5000,
+            DAGMAN_MAX_JOBS_IDLE=5000, DAGMAN_MAX_SUBMITS_PER_INTERVAL=1000, DAGMAN_USER_LOG_SCAN_INTERVAL=1,
+            venv_path="/data/i3home/tstjean/icecube/venv/bin/activate", has_avx2=True, request_cpus=4,
+            exports=[
+                "PYTHONPATH=/data/i3home/tstjean/icecube/venv/lib/python3.11/site-packages:$PYTHONPATH"
+            ]
+        )
+        job.configure(clean=True)
+        job.submit(monitor=True)
+
 
 ########################################################################################################################

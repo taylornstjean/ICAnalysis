@@ -43,6 +43,8 @@ class HTCondorJob:
             _should_transfer_files (str): Indicates whether files should be transferred.
             _when_to_transfer_output (str): When to transfer output files.
             _dagman_configurations (dict): A dict holding DAGMan macro values.
+            _venv (str): Absolute path to the virtual environment activate script.
+            _exports (list): A list of exports to run.
         """
 
     def __init__(
@@ -119,6 +121,11 @@ class HTCondorJob:
         # verify log directories exist
         for path in [self._log_file_path, self._out_file_path, self._err_file_path]:
             os.makedirs(path, exist_ok=True)
+
+        self._venv = kwargs.get("venv_path", None)
+        self._exports = kwargs.get("exports", [])
+
+        self._has_avx2 = kwargs.get("has_avx2", None)
 
     def submit(self, monitor: bool=False) -> None:
         """
@@ -217,11 +224,19 @@ class HTCondorJob:
         print(f"Generating job.sh file at {self._job_sh_file_path}...")
 
         # include env variables, initialize icetray and activate the virtual environment
-        content = '#!/bin/sh'
+        content = '#!/usr/bin/env bash'
         content += "\n\nexport HDF5_DISABLE_VERSION_CHECK=1"
         content += "\n\neval $(/cvmfs/icecube.opensciencegrid.org/py3-v4.3.0/setup.sh)"
+
+        if self._venv:
+            content += f"\nsource {self._venv}"
+
         content += '\n\ninput_file=$1\noutput_file=$2'
         content += f'\n\nscript_path="{self._script_path}"'
+
+        for e in self._exports:
+            content += f"\nexport {e}"
+
         content += f'\n\n"$SROOT"/metaprojects/icetray/v1.8.2/env-shell.sh {self._python_executable_path} $script_path -i "$input_file" -o "$output_file"'
 
         # verify the directory exists
@@ -249,6 +264,10 @@ class HTCondorJob:
         content += f"\nUniverse = {self._universe}"
         content += f"\nshould_transfer_files = {self._should_transfer_files}"
         content += f"\nwhen_to_transfer_output = {self._when_to_transfer_output}"
+
+        # include any other configurations
+        if self._has_avx2:
+            content += "\nrequirements = HAS_AVX2 == true"
 
         # include path to executable
         content += f"\n\nexecutable = {self._job_sh_file_path}"
@@ -321,7 +340,7 @@ class HTCondorJob:
                     # initialize a progress bar on first cycle
                     progress_bar = tqdm(
                         total=status["queued"] + status["ready"] + status["done"] + status["failed"],
-                        desc="Running jobs. 0 Failed.", unit="jobs"
+                        desc="Running jobs. 0 Failed. 0 Queued", unit="jobs"
                     )
                     _init_pb_flag = True
 
@@ -329,7 +348,7 @@ class HTCondorJob:
                 progress_bar.n = status["done"] + status["failed"]
 
                 # include the number of failed jobs in the description
-                progress_bar.set_description(f"Running jobs. {status['failed']} failed")
+                progress_bar.set_description(f"Running jobs. {status['failed']} Failed. {status['queued']} Queued")
 
                 if status["queued"] + status["ready"] == 0:
                     # break out of the loop once the job is complete
@@ -410,5 +429,39 @@ class HTCondorJob:
                 return status
 
         return None
+
+
+class HTCondorBatch(HTCondorJob):
+
+    def __init__(self, input_dir: str, output_dir: str, script_path: str, input_file_ext: str, output_file_ext: str,
+                 **kwargs):
+        super().__init__(input_dir, output_dir, script_path, input_file_ext, output_file_ext, **kwargs)
+
+        self._input_dirs = [os.path.abspath(os.path.join(input_dir, d)) for d in os.listdir(input_dir)]
+
+    def create_dag(self) -> None:
+        """
+        Generates a dagman.dag job submission file.
+        """
+        print(f"Generating dagman file at {self._dagman_file_path}...\n")
+
+        # include configuration file
+        instructions = f'CONFIG {self._config_file_path} \n\n'
+
+        # iterate over each file in the input directory and create a job entry
+        _iter = tqdm(self._input_dirs)
+        for i, file in enumerate(_iter):
+            # include instructions to run each job with an input directory and an output file
+            instructions += f'JOB job_{i} {self._job_sub_file_path} \n'
+            instructions += f'''VARS job_{i} infile="{file}" outfile="none"\n\n'''
+
+        print("\n")
+
+        # verify the directory exists
+        os.makedirs(os.path.dirname(self._dagman_file_path), exist_ok=True)
+
+        # save the file
+        with open(self._dagman_file_path, 'w') as fwrite:
+            fwrite.write(instructions)
 
 ########################################################################################################################

@@ -20,3 +20,5 @@ I3FILEDIR_NUMU = {
     21002: "/data/i3store/users/blaufuss/data/alert_catalog_v2/sim_21002_alerts"
 }
 
+SAMPLE_GCD_FILE = "/data/i3store/users/blaufuss/data/IC86/Run1179XX/GCD_Run117921.i3"
+

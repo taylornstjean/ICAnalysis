@@ -1,1 +1,1 @@
-from .models import HTCondorJob
+from .models import HTCondorJob, HTCondorBatch

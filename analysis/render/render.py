@@ -23,8 +23,8 @@ class EventDetailHist:
         self._ax[1].set_ylabel('Number of Events')
         self._ax[1].set_xlabel(r'cos($\theta$)')
 
-    def populate(self, charge: np.ndarray, zenith: np.ndarray):
-        self._ax[0].hist(np.log10(charge), bins=self._bins[0], alpha=0.5)
+    def populate(self, charge: np.ndarray, zenith: np.ndarray, weights):
+        self._ax[0].hist(np.log10(charge), weights=weights, bins=self._bins[0], alpha=0.5)
         self._ax[1].hist(np.cos(zenith), bins=self._bins[1], alpha=0.5)
 
     def save(self, path):
