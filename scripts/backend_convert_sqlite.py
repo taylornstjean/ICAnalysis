@@ -19,7 +19,7 @@ def main():
     run_group_id = config.RUN_GROUP_ID
 
     i3file = I3FileGroup(args.input_file, run_group_id)
-    i3file.backend_convert("sqlite")
+    i3file.to_backend("sqlite", workers=4)
 
 if __name__ == "__main__":
     main()

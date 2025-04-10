@@ -1,4 +1,7 @@
 # Contains path configurations
+import os
+from glob import glob
+
 
 RUN_GROUP_ID = 21220
 
@@ -21,4 +24,13 @@ I3FILEDIR_NUMU = {
 }
 
 SAMPLE_GCD_FILE = "/data/i3store/users/blaufuss/data/IC86/Run1179XX/GCD_Run117921.i3"
+
+DATA_DIR = "/data/i3store/users/tstjean/data"
+
+YML_CONFIG_SCHEMA_FILE = os.path.join(BASE_DIR, "data/config/yml_config_schema.json")
+
+OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+
+DB_TEST_DIR = os.path.join(DATA_DIR, "backend/test")
+# 1DB_TEST_FILE = glob(os.path.join(DATA_DIR, "backend/21220/Alertv2_IC86.2016_NuMu.021220.00000*.db"))[0]
 
