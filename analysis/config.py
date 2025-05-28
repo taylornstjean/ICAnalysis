@@ -28,9 +28,11 @@ SAMPLE_GCD_FILE = "/data/i3store/users/blaufuss/data/IC86/Run1179XX/GCD_Run11792
 DATA_DIR = "/data/i3store/users/tstjean/data"
 
 YML_CONFIG_SCHEMA_FILE = os.path.join(BASE_DIR, "data/config/yml_config_schema.json")
+YML_TRAINING_CONFIG_SCHEMA_FILE = os.path.join(BASE_DIR, "data/config/yml_classifier_training_config_schema.json")
+VP_RECO_MODEL_PATH = os.path.join(BASE_DIR, "data/config/vp_reco_model.yml")
 
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 
 DB_TEST_DIR = os.path.join(DATA_DIR, "backend/test")
-# 1DB_TEST_FILE = glob(os.path.join(DATA_DIR, "backend/21220/Alertv2_IC86.2016_NuMu.021220.00000*.db"))[0]
+DB_TEST_FILES = glob(os.path.join(DATA_DIR, "backend/21220/Alertv2_IC86.2016_NuMu.021220.00000*.db"))
 

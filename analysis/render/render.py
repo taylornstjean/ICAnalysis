@@ -1,12 +1,112 @@
 ########################################################################################################################
 # imports
+from scipy.constants import point
+
+from scipy.spatial import KDTree
+from scipy.stats import trim_mean
 
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from itertools import product
 
 ########################################################################################################################
+
+class FeatureDistribution:
+
+    def __init__(self, data: np.array, features: list, bins=int) -> None:
+        self.fig = make_subplots(rows=2, cols=2, start_cell="top-left")
+        self.data = data
+        self.bins = bins
+        self.features = features
+
+    def populate(self) -> None:
+        for i, [j, k] in enumerate(product([1, 2], repeat=2)):
+            self.fig.add_trace(
+                go.Histogram(
+                    x=self.data[:, i], nbinsx=self.bins
+                ), row=j, col=k
+            )
+
+            self.fig.update_yaxes(type='log', title_text="Pulses", row=j, col=k)
+            self.fig.update_xaxes(title_text=f"{self.features[i].upper().replace('_', ' ')}", row=j, col=k)
+
+    def save(self, path: str) -> None:
+        self.fig.write_html(path, include_plotlyjs="cdn")
+
+
+class FeatureDistribution3D:
+
+    def __init__(self, data: np.array) -> None:
+        self.fig = go.Figure()
+
+        data = np.array(data, dtype=float)
+
+        # Filter out rows with NaN
+        mask = ~np.isnan(data).any(axis=1)
+
+        clusters = self.get_clusters(data[mask], 0.01)
+
+        clustered_data = {}
+        for cluster in clusters:
+            ave_t = trim_mean(cluster[:, 3], 0.1)
+            x, y, z = cluster[0, 0], cluster[0, 1], cluster[0, 2]
+            clustered_data[(x, y, z, ave_t)] = len(cluster)
+
+        max_count = max(clustered_data.values())
+        for k in clustered_data:
+            clustered_data[k] /= max_count
+
+        self.data = clustered_data
+
+    @staticmethod
+    def get_clusters(data, radius):
+        xyz = data[:, :3]
+        remaining_mask = np.ones(len(data), dtype=bool)
+
+        tree = KDTree(xyz)
+        clusters = []
+
+        while remaining_mask.any():
+            # Get index of first remaining point
+            seed_idx = np.argmax(remaining_mask)
+            seed_point = xyz[seed_idx]
+
+            # Find all neighbors within radius
+            neighbor_indices = tree.query_ball_point(seed_point, radius)
+            neighbor_indices = [i for i in neighbor_indices if remaining_mask[i]]
+
+            # Extract and save cluster
+            cluster = data[neighbor_indices]
+            clusters.append(cluster)
+
+            # Mark these points as processed
+            remaining_mask[neighbor_indices] = False
+
+        return clusters
+
+    def populate(self) -> None:
+        point_data = np.array(list(self.data.keys()))
+        count_data = np.array(list(self.data.values()))
+
+        self.fig.add_trace(
+            go.Scatter3d(
+                x=point_data[:, 0],
+                y=point_data[:, 1],
+                z=point_data[:, 2],
+                mode="markers",
+                marker=dict(
+                    size=count_data * 10 + 2,
+                    color=point_data[:, 3],
+                    colorscale="blackbody"
+                )
+            )
+        )
+
+    def save(self, path: str) -> None:
+        self.fig.write_html(path, include_plotlyjs="cdn")
+
 
 class EventDetailHist:
 

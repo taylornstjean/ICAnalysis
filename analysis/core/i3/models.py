@@ -134,13 +134,14 @@ class I3FileGroup:
     def __repr__(self) -> str:
         return self._directory
 
-    def to_backend(self, backend: str, workers: int, merge: bool=False) -> str:
+    def to_backend(self, backend: str, workers: int, outdir: str = "", merge: bool=False) -> str:
         """
         Convert all `.i3.zst` files in the group to specified backend format.
 
         Args:
             backend (str): Output format ('sqlite' or 'parquet').
             workers (int): Number of parallel workers.
+            outdir (str): Output directory, defaults to default configured output directory.
             merge (bool): Whether to merge outputs into a single file.
 
         Returns:
@@ -149,7 +150,8 @@ class I3FileGroup:
         assert backend in CONVERTER_CLASS
 
         inputs = [self._directory]
-        outdir = os.path.join(config.DATA_DIR, f"backend/{self.group_id}/")
+        if not outdir:
+            outdir = os.path.join(config.DATA_DIR, f"backend/{self.group_id}/")
         gcd_rescue = config.SAMPLE_GCD_FILE
         os.makedirs(outdir, exist_ok=True)
 
@@ -160,7 +162,7 @@ class I3FileGroup:
             ],
             outdir=outdir,
             gcd_rescue=gcd_rescue,
-            workers=workers,
+            num_workers=workers
         )
         converter(inputs)
 

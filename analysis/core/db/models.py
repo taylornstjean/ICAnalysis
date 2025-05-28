@@ -1,6 +1,5 @@
 # --- Imports ---
-import os.path
-import matplotlib.pyplot as plt
+import os
 import numpy as np
 from tqdm import tqdm
 from glob import glob
@@ -10,6 +9,17 @@ import sqlite3
 
 from graphnet.data.dataset import Dataset  # GraphNeT dataset loader
 from analysis import config  # Project-specific config file
+from analysis.render import FeatureDistribution, FeatureDistribution3D
+
+from pytorch_lightning.utilities import rank_zero_only
+from graphnet.data.dataset.dataset import EnsembleDataset
+from graphnet.data.dataloader import DataLoader
+from graphnet.models import StandardModel
+from graphnet.utilities.config import (
+    DatasetConfig,
+    ModelConfig,
+    TrainingConfig,
+)
 
 
 # --- Class for handling multiple .db files in a directory ---
@@ -22,6 +32,9 @@ class DBFileGroup:
             os.path.join(self._directory, file) for file in glob(os.path.join(self._directory, "*.db"))
         ]
         self._merge_path = os.path.join(self._directory, "merged")  # Where merged DB will go
+        if not os.path.exists(self._merge_path):
+            os.makedirs(self._merge_path)
+
         self._config_path = os.path.join(self._directory, "config.yml")  # Optional config path
 
     def __preprocess_for_merge(self):
@@ -129,6 +142,15 @@ class DBFile:
             os.path.dirname(self._path),
             f"{os.path.basename(self._path).strip('.db')}_config.yml"
         )
+        self._dataset_config_path = os.path.join(
+            os.path.dirname(self._path),
+            f"{os.path.basename(self._path).strip('.db')}_training_config.yml"
+        )
+        self._model_config_path = config.VP_RECO_MODEL_PATH
+        self._training_output_dir = os.path.join(
+            config.OUTPUT_DIR,
+            f"{os.path.basename(self._path).strip('.db')}/"
+        )
 
     def generate_config(self):
         """Generate a YAML config file for this DB based on a base schema."""
@@ -140,6 +162,18 @@ class DBFile:
 
         # Save config
         with open(self._config_path, "w") as file:
+            yaml.dump(data, file)
+
+    def generate_training_config(self):
+        """Generate a YAML training config file for this DB based on a base schema."""
+        with open(config.YML_TRAINING_CONFIG_SCHEMA_FILE) as file:
+            data = json.load(file)
+
+        # Customize the base config with the current file path
+        data["path"] = self._path
+
+        # Save config
+        with open(self._dataset_config_path, "w") as file:
             yaml.dump(data, file)
 
     def plot_feature_distribution(self):
@@ -155,20 +189,109 @@ class DBFile:
 
         x_preprocessed = np.concatenate(x_preprocessed_list, axis=0)
 
-        # Layout setup for the grid of histograms
-        nb_features_preprocessed = x_preprocessed.shape[1]
-        dim = int(np.ceil(np.sqrt(nb_features_preprocessed)))
-        axis_size = 4
-        bins = 50
+        # figure = FeatureDistribution(x_preprocessed, features, 100)
+        # figure.populate()
+        # figure.save(os.path.join(config.OUTPUT_DIR, "plots/feature_distribution.html"))
 
-        # Create the figure
-        fig, axes = plt.subplots(dim, dim, figsize=(dim * axis_size, dim * axis_size))
+        figure = FeatureDistribution3D(x_preprocessed)
+        figure.populate()
+        figure.save(os.path.join(config.OUTPUT_DIR, "plots/feature_distribution_3d.html"))
 
-        for ix, ax in enumerate(axes.ravel()[:nb_features_preprocessed]):
-            ax.hist(x_preprocessed[:, ix], bins=bins, color="orange")
-            ax.set_xlabel(f"x{ix}: {features[ix] if ix <= len(features) else 'N/A'}")
-            ax.set_yscale("log")  # Log scale helps visualize skewed distributions
+    def train_model(
+            self,
+            gpus,
+            max_epochs: int,
+            early_stopping_patience: int,
+            batch_size: int,
+            num_workers: int,
+            suffix
+    ):
+        # Build model
+        model_config = ModelConfig.load(self._model_config_path)
+        model: StandardModel = StandardModel.from_config(model_config, trust=True)
 
-        fig.tight_layout()
-        save_path = os.path.join(config.OUTPUT_DIR, "plots/feature_distribution_preprocessed.png")
-        fig.savefig(save_path)
+        # Configuration
+        config = TrainingConfig(
+            target=[
+                target for task in model._tasks for target in task._target_labels
+            ],
+            early_stopping_patience=early_stopping_patience,
+            fit={
+                "gpus": gpus,
+                "max_epochs": max_epochs,
+            },
+            dataloader={"batch_size": batch_size, "num_workers": num_workers},
+        )
+
+        if suffix is not None:
+            archive = os.path.join(self._training_output_dir, f"train_model_{suffix}")
+        else:
+            archive = os.path.join(self._training_output_dir, "train_model")
+        run_name = "dynedge_{}_example".format("_".join(config.target))
+
+        # Construct dataloaders
+        dataset_config = DatasetConfig.load(self._dataset_config_path)
+        datasets = Dataset.from_config(
+            dataset_config,
+        )
+
+        # Construct datasets from multiple selections
+        train_dataset = EnsembleDataset(
+            [datasets[key] for key in datasets if key.startswith("train")]
+        )
+        valid_dataset = EnsembleDataset(
+            [datasets[key] for key in datasets if key.startswith("valid")]
+        )
+        test_dataset = EnsembleDataset(
+            [datasets[key] for key in datasets if key.startswith("test")]
+        )
+
+        # Construct dataloaders
+        train_dataloaders = DataLoader(
+            train_dataset, shuffle=True, **config.dataloader
+        )
+        valid_dataloaders = DataLoader(
+            valid_dataset, shuffle=False, **config.dataloader
+        )
+        test_dataloaders = DataLoader(
+            test_dataset, shuffle=False, **config.dataloader
+        )
+
+        print(f"Train dataset length: {len(train_dataset)}")
+        print(f"Validation dataset length: {len(valid_dataset)}")
+        print(f"Test dataset length: {len(test_dataset)}")
+
+        # Peek into the first batch
+        batch = next(iter(train_dataloaders))
+
+        print("Keys in training batch:")
+        print(batch.keys)
+
+        # Training model
+        model.fit(
+            train_dataloaders,
+            valid_dataloaders,
+            early_stopping_patience=config.early_stopping_patience,
+            logger=None,
+            **config.fit,
+        )
+
+        # Save model to file
+        db_name = dataset_config.path.split("/")[-1].split(".")[0]
+        path = os.path.join(archive, db_name, run_name)
+        os.makedirs(path, exist_ok=True)
+        model.save_state_dict(f"{path}/state_dict.pth")
+        model.save(f"{path}/model.pth")
+
+        # Get predictions
+        if isinstance(config.target, str):
+            additional_attributes = [config.target]
+        else:
+            additional_attributes = config.target
+
+        results = model.predict_as_dataframe(
+            test_dataloaders,
+            additional_attributes=additional_attributes + ["event_no"],
+            gpus=config.fit["gpus"],
+        )
+        results.to_csv(f"{path}/results.csv")
