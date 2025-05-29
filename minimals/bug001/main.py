@@ -49,9 +49,6 @@ run_name = "dynedge_{}_example".format("_".join(config.target))
 
 dataset_config = DatasetConfig.load(DATASET_CONFIG_PATH)
 
-# dataset_config does include position_x, position_y and position_z as target labels. This is where they are
-# dropped, they don't seem to be loaded into datasets via Dataset.from_config()
-
 datasets = Dataset.from_config(dataset_config)
 
 # Construct datasets from multiple selections
